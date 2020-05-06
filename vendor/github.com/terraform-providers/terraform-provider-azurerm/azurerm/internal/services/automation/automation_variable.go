@@ -14,6 +14,7 @@ import (
 	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/helpers/azure"
 	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/helpers/tf"
 	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/internal/clients"
+	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/internal/features"
 	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/internal/timeouts"
 	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/utils"
 )
@@ -132,7 +133,7 @@ func resourceAutomationVariableCreateUpdate(d *schema.ResourceData, meta interfa
 	accountName := d.Get("automation_account_name").(string)
 	varTypeLower := strings.ToLower(varType)
 
-	if d.IsNewResource() {
+	if features.ShouldResourcesBeImported() && d.IsNewResource() {
 		resp, err := client.Get(ctx, resourceGroup, accountName, name)
 		if err != nil {
 			if !utils.ResponseWasNotFound(resp.Response) {
@@ -149,18 +150,17 @@ func resourceAutomationVariableCreateUpdate(d *schema.ResourceData, meta interfa
 	encrypted := d.Get("encrypted").(bool)
 	value := ""
 
-	switch varTypeLower {
-	case "datetime":
+	if varTypeLower == "datetime" {
 		vTime, parseErr := time.Parse(time.RFC3339, d.Get("value").(string))
 		if parseErr != nil {
 			return fmt.Errorf("Error invalid time format: %+v", parseErr)
 		}
 		value = fmt.Sprintf("\"\\/Date(%d)\\/\"", vTime.UnixNano()/1000000)
-	case "bool":
+	} else if varTypeLower == "bool" {
 		value = strconv.FormatBool(d.Get("value").(bool))
-	case "int":
+	} else if varTypeLower == "int" {
 		value = strconv.Itoa(d.Get("value").(int))
-	case "string":
+	} else if varTypeLower == "string" {
 		value = strconv.Quote(d.Get("value").(string))
 	}
 

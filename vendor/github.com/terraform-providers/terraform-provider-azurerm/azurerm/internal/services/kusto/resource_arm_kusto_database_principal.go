@@ -132,12 +132,11 @@ func resourceArmKustoDatabasePrincipalCreate(d *schema.ResourceData, meta interf
 	clientID := d.Get("client_id").(string)
 	objectID := d.Get("object_id").(string)
 	fqn := ""
-	switch principalType {
-	case "User":
+	if principalType == "User" {
 		fqn = fmt.Sprintf("aaduser=%s;%s", objectID, clientID)
-	case "Group":
+	} else if principalType == "Group" {
 		fqn = fmt.Sprintf("aadgroup=%s;%s", objectID, clientID)
-	case "App":
+	} else if principalType == "App" {
 		fqn = fmt.Sprintf("aadapp=%s;%s", objectID, clientID)
 	}
 

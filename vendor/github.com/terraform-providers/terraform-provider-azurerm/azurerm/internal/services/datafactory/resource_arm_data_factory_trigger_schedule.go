@@ -14,6 +14,7 @@ import (
 	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/helpers/tf"
 	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/helpers/validate"
 	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/internal/clients"
+	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/internal/features"
 	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/internal/timeouts"
 	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/utils"
 )
@@ -132,7 +133,7 @@ func resourceArmDataFactoryTriggerScheduleCreateUpdate(d *schema.ResourceData, m
 	triggerName := d.Get("name").(string)
 	dataFactoryName := d.Get("data_factory_name").(string)
 
-	if d.IsNewResource() {
+	if features.ShouldResourcesBeImported() && d.IsNewResource() {
 		existing, err := client.Get(ctx, resourceGroupName, dataFactoryName, triggerName, "")
 		if err != nil {
 			if !utils.ResponseWasNotFound(existing.Response) {
@@ -239,10 +240,10 @@ func resourceArmDataFactoryTriggerScheduleRead(d *schema.ResourceData, meta inte
 	if scheduleTriggerProps != nil {
 		if recurrence := scheduleTriggerProps.Recurrence; recurrence != nil {
 			if v := recurrence.StartTime; v != nil {
-				d.Set("start_time", v.Format(time.RFC3339))
+				d.Set("start_time", (*v).Format(time.RFC3339))
 			}
 			if v := recurrence.EndTime; v != nil {
-				d.Set("end_time", v.Format(time.RFC3339))
+				d.Set("end_time", (*v).Format(time.RFC3339))
 			}
 			d.Set("frequency", recurrence.Frequency)
 			d.Set("interval", recurrence.Interval)

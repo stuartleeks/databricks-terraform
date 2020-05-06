@@ -175,6 +175,11 @@ func resourceArmNetworkPacketCaptureCreate(d *schema.ResourceData, meta interfac
 		return err
 	}
 
+	filters, err := expandArmNetworkPacketCaptureFilters(d)
+	if err != nil {
+		return err
+	}
+
 	properties := network.PacketCapture{
 		PacketCaptureParameters: &network.PacketCaptureParameters{
 			Target:                  utils.String(targetResourceId),
@@ -182,7 +187,7 @@ func resourceArmNetworkPacketCaptureCreate(d *schema.ResourceData, meta interfac
 			BytesToCapturePerPacket: utils.Int32(int32(bytesToCapturePerPacket)),
 			TimeLimitInSeconds:      utils.Int32(int32(timeLimitInSeconds)),
 			TotalBytesPerSession:    utils.Int32(int32(totalBytesPerSession)),
-			Filters:                 expandArmNetworkPacketCaptureFilters(d),
+			Filters:                 filters,
 		},
 	}
 
@@ -330,10 +335,10 @@ func flattenArmNetworkPacketCaptureStorageLocation(input *network.PacketCaptureS
 	return []interface{}{output}
 }
 
-func expandArmNetworkPacketCaptureFilters(d *schema.ResourceData) *[]network.PacketCaptureFilter {
+func expandArmNetworkPacketCaptureFilters(d *schema.ResourceData) (*[]network.PacketCaptureFilter, error) {
 	inputFilters := d.Get("filter").([]interface{})
 	if len(inputFilters) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	filters := make([]network.PacketCaptureFilter, 0)
@@ -357,7 +362,7 @@ func expandArmNetworkPacketCaptureFilters(d *schema.ResourceData) *[]network.Pac
 		filters = append(filters, filter)
 	}
 
-	return &filters
+	return &filters, nil
 }
 
 func flattenArmNetworkPacketCaptureFilters(input *[]network.PacketCaptureFilter) []interface{} {

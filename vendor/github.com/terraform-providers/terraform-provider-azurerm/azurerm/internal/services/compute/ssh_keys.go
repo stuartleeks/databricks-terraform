@@ -95,10 +95,13 @@ func formatUsernameForAuthorizedKeysPath(username string) string {
 func parseUsernameFromAuthorizedKeysPath(input string) *string {
 	// the Azure VM agent hard-codes this to `/home/username/.ssh/authorized_keys`
 	// as such we can hard-code this for a better UX
-	r := regexp.MustCompile("(/home/)+(?P<username>.*?)(/.ssh/authorized_keys)+")
+	compiled, err := regexp.Compile("(/home/)+(?P<username>.*?)(/.ssh/authorized_keys)+")
+	if err != nil {
+		return nil
+	}
 
-	keys := r.SubexpNames()
-	values := r.FindStringSubmatch(input)
+	keys := compiled.SubexpNames()
+	values := compiled.FindStringSubmatch(input)
 
 	if values == nil {
 		return nil

@@ -5,7 +5,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/services/cdn/mgmt/2019-04-15/cdn"
+	"github.com/Azure/azure-sdk-for-go/services/cdn/mgmt/2017-10-12/cdn"
 	"github.com/hashicorp/go-azure-helpers/response"
 	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/helper/validation"
@@ -13,6 +13,7 @@ import (
 	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/helpers/suppress"
 	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/helpers/tf"
 	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/internal/clients"
+	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/internal/features"
 	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/internal/services/cdn/parse"
 	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/internal/tags"
 	azSchema "github.com/terraform-providers/terraform-provider-azurerm/azurerm/internal/tf/schema"
@@ -196,18 +197,13 @@ func resourceArmCdnEndpoint() *schema.Resource {
 				Computed: true,
 			},
 
-			"global_delivery_rule": endpointGlobalDeliveryRule(),
-
-			"delivery_rule": endpointDeliveryRule(),
-
 			"tags": tags.Schema(),
 		},
 	}
 }
 
 func resourceArmCdnEndpointCreate(d *schema.ResourceData, meta interface{}) error {
-	endpointsClient := meta.(*clients.Client).Cdn.EndpointsClient
-	profilesClient := meta.(*clients.Client).Cdn.ProfilesClient
+	client := meta.(*clients.Client).Cdn.EndpointsClient
 	ctx, cancel := timeouts.ForCreate(meta.(*clients.Client).StopContext, d)
 	defer cancel()
 
@@ -217,15 +213,17 @@ func resourceArmCdnEndpointCreate(d *schema.ResourceData, meta interface{}) erro
 	resourceGroup := d.Get("resource_group_name").(string)
 	profileName := d.Get("profile_name").(string)
 
-	existing, err := endpointsClient.Get(ctx, resourceGroup, profileName, name)
-	if err != nil {
-		if !utils.ResponseWasNotFound(existing.Response) {
-			return fmt.Errorf("Error checking for presence of existing CDN Endpoint %q (Profile %q / Resource Group %q): %s", name, profileName, resourceGroup, err)
+	if features.ShouldResourcesBeImported() && d.IsNewResource() {
+		existing, err := client.Get(ctx, resourceGroup, profileName, name)
+		if err != nil {
+			if !utils.ResponseWasNotFound(existing.Response) {
+				return fmt.Errorf("Error checking for presence of existing CDN Endpoint %q (Profile %q / Resource Group %q): %s", name, profileName, resourceGroup, err)
+			}
 		}
-	}
 
-	if existing.ID != nil && *existing.ID != "" {
-		return tf.ImportAsExistsError("azurerm_cdn_endpoint", *existing.ID)
+		if existing.ID != nil && *existing.ID != "" {
+			return tf.ImportAsExistsError("azurerm_cdn_endpoint", *existing.ID)
+		}
 	}
 
 	location := azure.NormalizeLocation(d.Get("location").(string))
@@ -238,8 +236,12 @@ func resourceArmCdnEndpointCreate(d *schema.ResourceData, meta interface{}) erro
 	probePath := d.Get("probe_path").(string)
 	optimizationType := d.Get("optimization_type").(string)
 	contentTypes := expandArmCdnEndpointContentTypesToCompress(d)
-	geoFilters := expandCdnEndpointGeoFilters(d)
 	t := d.Get("tags").(map[string]interface{})
+
+	geoFilters, err := expandArmCdnEndpointGeoFilters(d)
+	if err != nil {
+		return fmt.Errorf("Error expanding `geo_filter`: %s", err)
+	}
 
 	endpoint := cdn.Endpoint{
 		Location: &location,
@@ -265,41 +267,24 @@ func resourceArmCdnEndpointCreate(d *schema.ResourceData, meta interface{}) erro
 		endpoint.EndpointProperties.ProbePath = utils.String(probePath)
 	}
 
-	origins := expandAzureRmCdnEndpointOrigins(d)
+	origins, err := expandAzureRmCdnEndpointOrigins(d)
+	if err != nil {
+		return fmt.Errorf("Error Building list of CDN Endpoint Origins: %s", err)
+	}
 	if len(origins) > 0 {
 		endpoint.EndpointProperties.Origins = &origins
 	}
 
-	profile, err := profilesClient.Get(ctx, resourceGroup, profileName)
-	if err != nil {
-		return fmt.Errorf("Error creating CDN Endpoint %q while getting CDN Profile (Profile %q / Resource Group %q): %+v", name, profileName, resourceGroup, err)
-	}
-
-	if profile.Sku != nil {
-		globalDeliveryRulesRaw := d.Get("global_delivery_rule").([]interface{})
-		deliveryRulesRaw := d.Get("delivery_rule").([]interface{})
-		deliveryPolicy, err := expandArmCdnEndpointDeliveryPolicy(globalDeliveryRulesRaw, deliveryRulesRaw)
-		if err != nil {
-			return fmt.Errorf("Error expanding `global_delivery_rule` or `delivery_rule`: %s", err)
-		}
-
-		if profile.Sku.Name != cdn.StandardMicrosoft && len(*deliveryPolicy.Rules) > 0 {
-			return fmt.Errorf("`global_delivery_policy` and `delivery_rule` are only allowed when `Standard_Microsoft` sku is used. Profile sku:  %s", profile.Sku.Name)
-		}
-
-		endpoint.EndpointProperties.DeliveryPolicy = deliveryPolicy
-	}
-
-	future, err := endpointsClient.Create(ctx, resourceGroup, profileName, name, endpoint)
+	future, err := client.Create(ctx, resourceGroup, profileName, name, endpoint)
 	if err != nil {
 		return fmt.Errorf("Error creating CDN Endpoint %q (Profile %q / Resource Group %q): %+v", name, profileName, resourceGroup, err)
 	}
 
-	if err = future.WaitForCompletionRef(ctx, endpointsClient.Client); err != nil {
+	if err = future.WaitForCompletionRef(ctx, client.Client); err != nil {
 		return fmt.Errorf("Error waiting for CDN Endpoint %q (Profile %q / Resource Group %q) to finish creating: %+v", name, profileName, resourceGroup, err)
 	}
 
-	read, err := endpointsClient.Get(ctx, resourceGroup, profileName, name)
+	read, err := client.Get(ctx, resourceGroup, profileName, name)
 	if err != nil {
 		return fmt.Errorf("Error retrieving CDN Endpoint %q (Profile %q / Resource Group %q): %+v", name, profileName, resourceGroup, err)
 	}
@@ -328,8 +313,12 @@ func resourceArmCdnEndpointUpdate(d *schema.ResourceData, meta interface{}) erro
 	probePath := d.Get("probe_path").(string)
 	optimizationType := d.Get("optimization_type").(string)
 	contentTypes := expandArmCdnEndpointContentTypesToCompress(d)
-	geoFilters := expandCdnEndpointGeoFilters(d)
 	t := d.Get("tags").(map[string]interface{})
+
+	geoFilters, err := expandArmCdnEndpointGeoFilters(d)
+	if err != nil {
+		return fmt.Errorf("Error expanding `geo_filter`: %s", err)
+	}
 
 	endpoint := cdn.EndpointUpdateParameters{
 		EndpointPropertiesUpdateParameters: &cdn.EndpointPropertiesUpdateParameters{
@@ -352,30 +341,6 @@ func resourceArmCdnEndpointUpdate(d *schema.ResourceData, meta interface{}) erro
 	}
 	if probePath != "" {
 		endpoint.EndpointPropertiesUpdateParameters.ProbePath = utils.String(probePath)
-	}
-
-	profilesClient := meta.(*clients.Client).Cdn.ProfilesClient
-	profileGetCtx, profileGetCancel := timeouts.ForCreate(meta.(*clients.Client).StopContext, d)
-	defer profileGetCancel()
-
-	profile, err := profilesClient.Get(profileGetCtx, id.ResourceGroup, id.ProfileName)
-	if err != nil {
-		return fmt.Errorf("Error creating CDN Endpoint %q while getting CDN Profile (Profile %q / Resource Group %q): %+v", id.Name, id.ProfileName, id.ResourceGroup, err)
-	}
-
-	if profile.Sku != nil {
-		globalDeliveryRulesRaw := d.Get("global_delivery_rule").([]interface{})
-		deliveryRulesRaw := d.Get("delivery_rule").([]interface{})
-		deliveryPolicy, err := expandArmCdnEndpointDeliveryPolicy(globalDeliveryRulesRaw, deliveryRulesRaw)
-		if err != nil {
-			return fmt.Errorf("Error expanding `global_delivery_rule` or `delivery_rule`: %s", err)
-		}
-
-		if profile.Sku.Name != cdn.StandardMicrosoft && len(*deliveryPolicy.Rules) > 0 {
-			return fmt.Errorf("`global_delivery_policy` and `delivery_rule` are only allowed when `Standard_Microsoft` sku is used. Profile sku:  %s", profile.Sku.Name)
-		}
-
-		endpoint.EndpointPropertiesUpdateParameters.DeliveryPolicy = deliveryPolicy
 	}
 
 	future, err := endpointsClient.Update(ctx, id.ResourceGroup, id.ProfileName, id.Name, endpoint)
@@ -445,17 +410,6 @@ func resourceArmCdnEndpointRead(d *schema.ResourceData, meta interface{}) error 
 		if err := d.Set("origin", origins); err != nil {
 			return fmt.Errorf("Error setting `origin`: %+v", err)
 		}
-
-		flattenedDeliveryPolicies, err := flattenArmCdnEndpointDeliveryPolicy(props.DeliveryPolicy)
-		if err != nil {
-			return err
-		}
-		if err := d.Set("global_delivery_rule", flattenedDeliveryPolicies.globalDeliveryRules); err != nil {
-			return fmt.Errorf("Error setting `global_delivery_rule`: %+v", err)
-		}
-		if err := d.Set("delivery_rule", flattenedDeliveryPolicies.deliveryRules); err != nil {
-			return fmt.Errorf("Error setting `delivery_rule`: %+v", err)
-		}
 	}
 
 	return tags.FlattenAndSet(d, resp.Tags)
@@ -489,7 +443,7 @@ func resourceArmCdnEndpointDelete(d *schema.ResourceData, meta interface{}) erro
 	return nil
 }
 
-func expandCdnEndpointGeoFilters(d *schema.ResourceData) *[]cdn.GeoFilter {
+func expandArmCdnEndpointGeoFilters(d *schema.ResourceData) (*[]cdn.GeoFilter, error) {
 	filters := make([]cdn.GeoFilter, 0)
 
 	inputFilters := d.Get("geo_filter").([]interface{})
@@ -514,7 +468,7 @@ func expandCdnEndpointGeoFilters(d *schema.ResourceData) *[]cdn.GeoFilter {
 		filters = append(filters, filter)
 	}
 
-	return &filters
+	return &filters, nil
 }
 
 func flattenCdnEndpointGeoFilters(input *[]cdn.GeoFilter) []interface{} {
@@ -522,9 +476,11 @@ func flattenCdnEndpointGeoFilters(input *[]cdn.GeoFilter) []interface{} {
 
 	if filters := input; filters != nil {
 		for _, filter := range *filters {
-			relativePath := ""
-			if filter.RelativePath != nil {
-				relativePath = *filter.RelativePath
+			output := make(map[string]interface{})
+
+			output["action"] = string(filter.Action)
+			if path := filter.RelativePath; path != nil {
+				output["relative_path"] = *path
 			}
 
 			outputCodes := make([]interface{}, 0)
@@ -533,12 +489,9 @@ func flattenCdnEndpointGeoFilters(input *[]cdn.GeoFilter) []interface{} {
 					outputCodes = append(outputCodes, code)
 				}
 			}
+			output["country_codes"] = outputCodes
 
-			results = append(results, map[string]interface{}{
-				"action":        string(filter.Action),
-				"country_codes": outputCodes,
-				"relative_path": relativePath,
-			})
+			results = append(results, output)
 		}
 	}
 
@@ -569,7 +522,7 @@ func flattenAzureRMCdnEndpointContentTypes(input *[]string) []interface{} {
 	return output
 }
 
-func expandAzureRmCdnEndpointOrigins(d *schema.ResourceData) []cdn.DeepCreatedOrigin {
+func expandAzureRmCdnEndpointOrigins(d *schema.ResourceData) ([]cdn.DeepCreatedOrigin, error) {
 	configs := d.Get("origin").(*schema.Set).List()
 	origins := make([]cdn.DeepCreatedOrigin, 0)
 
@@ -599,7 +552,7 @@ func expandAzureRmCdnEndpointOrigins(d *schema.ResourceData) []cdn.DeepCreatedOr
 		origins = append(origins, origin)
 	}
 
-	return origins
+	return origins, nil
 }
 
 func flattenAzureRMCdnEndpointOrigin(input *[]cdn.DeepCreatedOrigin) []interface{} {
@@ -607,102 +560,27 @@ func flattenAzureRMCdnEndpointOrigin(input *[]cdn.DeepCreatedOrigin) []interface
 
 	if list := input; list != nil {
 		for _, i := range *list {
-			name := ""
-			if i.Name != nil {
-				name = *i.Name
+			output := map[string]interface{}{}
+
+			if name := i.Name; name != nil {
+				output["name"] = *name
 			}
 
-			hostName := ""
-			httpPort := 0
-			httpsPort := 0
 			if props := i.DeepCreatedOriginProperties; props != nil {
-				if props.HostName != nil {
-					hostName = *props.HostName
+				if hostName := props.HostName; hostName != nil {
+					output["host_name"] = *hostName
 				}
 				if port := props.HTTPPort; port != nil {
-					httpPort = int(*port)
+					output["http_port"] = int(*port)
 				}
 				if port := props.HTTPSPort; port != nil {
-					httpsPort = int(*port)
+					output["https_port"] = int(*port)
 				}
 			}
 
-			results = append(results, map[string]interface{}{
-				"name":       name,
-				"host_name":  hostName,
-				"http_port":  httpPort,
-				"https_port": httpsPort,
-			})
+			results = append(results, output)
 		}
 	}
 
 	return results
-}
-
-func expandArmCdnEndpointDeliveryPolicy(globalRulesRaw []interface{}, deliveryRulesRaw []interface{}) (*cdn.EndpointPropertiesUpdateParametersDeliveryPolicy, error) {
-	deliveryRules := make([]cdn.DeliveryRule, 0)
-	deliveryPolicy := cdn.EndpointPropertiesUpdateParametersDeliveryPolicy{
-		Description: utils.String(""),
-		Rules:       &deliveryRules,
-	}
-
-	if len(globalRulesRaw) > 0 {
-		ruleRaw := globalRulesRaw[0].(map[string]interface{})
-		rule, err := expandArmCdnEndpointGlobalDeliveryRule(ruleRaw)
-		if err != nil {
-			return nil, err
-		}
-		deliveryRules = append(deliveryRules, *rule)
-	}
-
-	for _, ruleV := range deliveryRulesRaw {
-		ruleRaw := ruleV.(map[string]interface{})
-		rule, err := expandArmCdnEndpointDeliveryRule(ruleRaw)
-		if err != nil {
-			return nil, err
-		}
-		deliveryRules = append(deliveryRules, *rule)
-	}
-
-	return &deliveryPolicy, nil
-}
-
-type flattenedEndpointDeliveryPolicies struct {
-	globalDeliveryRules []interface{}
-	deliveryRules       []interface{}
-}
-
-func flattenArmCdnEndpointDeliveryPolicy(input *cdn.EndpointPropertiesUpdateParametersDeliveryPolicy) (*flattenedEndpointDeliveryPolicies, error) {
-	output := flattenedEndpointDeliveryPolicies{
-		globalDeliveryRules: make([]interface{}, 0),
-		deliveryRules:       make([]interface{}, 0),
-	}
-	if input == nil || input.Rules == nil {
-		return &output, nil
-	}
-
-	for _, rule := range *input.Rules {
-		if rule.Order == nil {
-			continue
-		}
-
-		if int(*rule.Order) == 0 {
-			flattenedRule, err := flattenArmCdnEndpointGlobalDeliveryRule(rule)
-			if err != nil {
-				return nil, err
-			}
-
-			output.globalDeliveryRules = append(output.globalDeliveryRules, flattenedRule)
-			continue
-		}
-
-		flattenedRule, err := flattenArmCdnEndpointDeliveryRule(rule)
-		if err != nil {
-			return nil, err
-		}
-
-		output.deliveryRules = append(output.deliveryRules, flattenedRule)
-	}
-
-	return &output, nil
 }

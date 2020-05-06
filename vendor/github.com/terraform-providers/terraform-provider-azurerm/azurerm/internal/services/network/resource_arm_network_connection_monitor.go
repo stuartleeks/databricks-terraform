@@ -133,6 +133,11 @@ func resourceArmNetworkConnectionMonitorCreateUpdate(d *schema.ResourceData, met
 	autoStart := d.Get("auto_start").(bool)
 	intervalInSeconds := int32(d.Get("interval_in_seconds").(int))
 
+	source, err := expandArmNetworkConnectionMonitorSource(d)
+	if err != nil {
+		return err
+	}
+
 	dest, err := expandArmNetworkConnectionMonitorDestination(d)
 	if err != nil {
 		return err
@@ -157,7 +162,7 @@ func resourceArmNetworkConnectionMonitorCreateUpdate(d *schema.ResourceData, met
 		Location: utils.String(location),
 		Tags:     tags.Expand(t),
 		ConnectionMonitorParameters: &network.ConnectionMonitorParameters{
-			Source:                      expandArmNetworkConnectionMonitorSource(d),
+			Source:                      source,
 			Destination:                 dest,
 			AutoStart:                   utils.Bool(autoStart),
 			MonitoringIntervalInSeconds: utils.Int32(intervalInSeconds),
@@ -277,7 +282,7 @@ func flattenArmNetworkConnectionMonitorSource(input *network.ConnectionMonitorSo
 	return []interface{}{output}
 }
 
-func expandArmNetworkConnectionMonitorSource(d *schema.ResourceData) *network.ConnectionMonitorSource {
+func expandArmNetworkConnectionMonitorSource(d *schema.ResourceData) (*network.ConnectionMonitorSource, error) {
 	sources := d.Get("source").([]interface{})
 	source := sources[0].(map[string]interface{})
 
@@ -289,7 +294,7 @@ func expandArmNetworkConnectionMonitorSource(d *schema.ResourceData) *network.Co
 		monitorSource.Port = utils.Int32(int32(v.(int)))
 	}
 
-	return &monitorSource
+	return &monitorSource, nil
 }
 
 func flattenArmNetworkConnectionMonitorDestination(input *network.ConnectionMonitorDestination) []interface{} {

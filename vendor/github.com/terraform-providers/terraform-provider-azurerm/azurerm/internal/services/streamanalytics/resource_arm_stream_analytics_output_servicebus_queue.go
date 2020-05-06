@@ -145,8 +145,10 @@ func resourceArmStreamAnalyticsOutputServiceBusQueueCreateUpdate(d *schema.Resou
 		}
 
 		d.SetId(*read.ID)
-	} else if _, err := client.Update(ctx, props, resourceGroup, jobName, name, ""); err != nil {
-		return fmt.Errorf("Error Updating Stream Analytics Output ServiceBus Queue %q (Job %q / Resource Group %q): %+v", name, jobName, resourceGroup, err)
+	} else {
+		if _, err := client.Update(ctx, props, resourceGroup, jobName, name, ""); err != nil {
+			return fmt.Errorf("Error Updating Stream Analytics Output ServiceBus Queue %q (Job %q / Resource Group %q): %+v", name, jobName, resourceGroup, err)
+		}
 	}
 
 	return resourceArmStreamAnalyticsOutputServiceBusQueueRead(d, meta)

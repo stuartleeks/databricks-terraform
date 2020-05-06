@@ -19,6 +19,7 @@ import (
 	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/helpers/tf"
 	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/helpers/validate"
 	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/internal/clients"
+	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/internal/features"
 	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/internal/locks"
 	intStor "github.com/terraform-providers/terraform-provider-azurerm/azurerm/internal/services/storage/client"
 	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/internal/tags"
@@ -635,7 +636,7 @@ func resourceArmVirtualMachineCreateUpdate(d *schema.ResourceData, meta interfac
 	name := d.Get("name").(string)
 	resGroup := d.Get("resource_group_name").(string)
 
-	if d.IsNewResource() {
+	if features.ShouldResourcesBeImported() && d.IsNewResource() {
 		existing, err := client.Get(ctx, resGroup, name, "")
 		if err != nil {
 			if !utils.ResponseWasNotFound(existing.Response) {
@@ -734,11 +735,17 @@ func resourceArmVirtualMachineCreateUpdate(d *schema.ResourceData, meta interfac
 	}
 
 	if _, ok := d.GetOk("identity"); ok {
-		vm.Identity = expandAzureRmVirtualMachineIdentity(d)
+		vmIdentity := expandAzureRmVirtualMachineIdentity(d)
+		vm.Identity = vmIdentity
 	}
 
 	if _, ok := d.GetOk("plan"); ok {
-		vm.Plan = expandAzureRmVirtualMachinePlan(d)
+		plan, err2 := expandAzureRmVirtualMachinePlan(d)
+		if err2 != nil {
+			return err2
+		}
+
+		vm.Plan = plan
 	}
 
 	locks.ByName(name, virtualMachineResourceName)
@@ -1405,10 +1412,10 @@ func flattenAzureRmVirtualMachineReviseDiskInfo(result map[string]interface{}, d
 	}
 }
 
-func expandAzureRmVirtualMachinePlan(d *schema.ResourceData) *compute.Plan {
+func expandAzureRmVirtualMachinePlan(d *schema.ResourceData) (*compute.Plan, error) {
 	planConfigs := d.Get("plan").([]interface{})
 	if len(planConfigs) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	planConfig := planConfigs[0].(map[string]interface{})
@@ -1421,7 +1428,7 @@ func expandAzureRmVirtualMachinePlan(d *schema.ResourceData) *compute.Plan {
 		Publisher: &publisher,
 		Name:      &name,
 		Product:   &product,
-	}
+	}, nil
 }
 
 func expandAzureRmVirtualMachineIdentity(d *schema.ResourceData) *compute.VirtualMachineIdentity {
@@ -1465,14 +1472,20 @@ func expandAzureRmVirtualMachineOsProfile(d *schema.ResourceData) (*compute.OSPr
 	}
 
 	if _, ok := d.GetOk("os_profile_windows_config"); ok {
-		winConfig := expandAzureRmVirtualMachineOsProfileWindowsConfig(d)
+		winConfig, err := expandAzureRmVirtualMachineOsProfileWindowsConfig(d)
+		if err != nil {
+			return nil, err
+		}
 		if winConfig != nil {
 			profile.WindowsConfiguration = winConfig
 		}
 	}
 
 	if _, ok := d.GetOk("os_profile_linux_config"); ok {
-		linuxConfig := expandAzureRmVirtualMachineOsProfileLinuxConfig(d)
+		linuxConfig, err := expandAzureRmVirtualMachineOsProfileLinuxConfig(d)
+		if err != nil {
+			return nil, err
+		}
 		if linuxConfig != nil {
 			profile.LinuxConfiguration = linuxConfig
 		}
@@ -1543,7 +1556,7 @@ func expandAzureRmVirtualMachineOsProfileSecrets(d *schema.ResourceData) *[]comp
 	return &secrets
 }
 
-func expandAzureRmVirtualMachineOsProfileLinuxConfig(d *schema.ResourceData) *compute.LinuxConfiguration {
+func expandAzureRmVirtualMachineOsProfileLinuxConfig(d *schema.ResourceData) (*compute.LinuxConfiguration, error) {
 	osProfilesLinuxConfig := d.Get("os_profile_linux_config").(*schema.Set).List()
 
 	linuxConfig := osProfilesLinuxConfig[0].(map[string]interface{})
@@ -1577,10 +1590,10 @@ func expandAzureRmVirtualMachineOsProfileLinuxConfig(d *schema.ResourceData) *co
 		}
 	}
 
-	return config
+	return config, nil
 }
 
-func expandAzureRmVirtualMachineOsProfileWindowsConfig(d *schema.ResourceData) *compute.WindowsConfiguration {
+func expandAzureRmVirtualMachineOsProfileWindowsConfig(d *schema.ResourceData) (*compute.WindowsConfiguration, error) {
 	osProfilesWindowsConfig := d.Get("os_profile_windows_config").(*schema.Set).List()
 
 	osProfileConfig := osProfilesWindowsConfig[0].(map[string]interface{})
@@ -1648,7 +1661,7 @@ func expandAzureRmVirtualMachineOsProfileWindowsConfig(d *schema.ResourceData) *
 			config.AdditionalUnattendContent = &additionalConfigContent
 		}
 	}
-	return config
+	return config, nil
 }
 
 func expandAzureRmVirtualMachineDataDisk(d *schema.ResourceData) ([]compute.DataDisk, error) {

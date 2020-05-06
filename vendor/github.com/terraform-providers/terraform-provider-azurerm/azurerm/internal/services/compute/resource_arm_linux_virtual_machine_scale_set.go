@@ -13,8 +13,7 @@ import (
 	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/helpers/tf"
 	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/internal/clients"
 	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/internal/features"
-	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/internal/services/compute/parse"
-	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/internal/services/compute/validate"
+	computeValidate "github.com/terraform-providers/terraform-provider-azurerm/azurerm/internal/services/compute/validate"
 	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/internal/tags"
 	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/internal/tf/base64"
 	azSchema "github.com/terraform-providers/terraform-provider-azurerm/azurerm/internal/tf/schema"
@@ -30,7 +29,7 @@ func resourceArmLinuxVirtualMachineScaleSet() *schema.Resource {
 		Delete: resourceArmLinuxVirtualMachineScaleSetDelete,
 
 		Importer: azSchema.ValidateResourceIDPriorToImportThen(func(id string) error {
-			_, err := parse.VirtualMachineScaleSetID(id)
+			_, err := ParseVirtualMachineScaleSetID(id)
 			return err
 		}, importVirtualMachineScaleSet(compute.Linux, "azurerm_linux_virtual_machine_scale_set")),
 
@@ -49,7 +48,7 @@ func resourceArmLinuxVirtualMachineScaleSet() *schema.Resource {
 				Type:         schema.TypeString,
 				Required:     true,
 				ForceNew:     true,
-				ValidateFunc: ValidateVmName,
+				ValidateFunc: ValidateLinuxName,
 			},
 
 			"resource_group_name": azure.SchemaResourceGroupName(),
@@ -95,8 +94,6 @@ func resourceArmLinuxVirtualMachineScaleSet() *schema.Resource {
 
 			"automatic_os_upgrade_policy": VirtualMachineScaleSetAutomatedOSUpgradePolicySchema(),
 
-			"automatic_instance_repair": VirtualMachineScaleSetAutomaticRepairsPolicySchema(),
-
 			"boot_diagnostics": bootDiagnosticsSchema(),
 
 			"computer_name_prefix": {
@@ -106,8 +103,9 @@ func resourceArmLinuxVirtualMachineScaleSet() *schema.Resource {
 				// Computed since we reuse the VM name if one's not specified
 				Computed: true,
 				ForceNew: true,
-
-				ValidateFunc: ValidateLinuxComputerNamePrefix,
+				// note: whilst the portal says 1-15 characters it seems to mirror the rules for the vm name
+				// (e.g. 1-15 for Windows, 1-63 for Linux)
+				ValidateFunc: ValidateLinuxName,
 			},
 
 			"custom_data": base64.OptionalSchema(false),
@@ -182,7 +180,7 @@ func resourceArmLinuxVirtualMachineScaleSet() *schema.Resource {
 				Type:         schema.TypeString,
 				Optional:     true,
 				ForceNew:     true,
-				ValidateFunc: validate.ProximityPlacementGroupID,
+				ValidateFunc: computeValidate.ProximityPlacementGroupID,
 				// the Compute API is broken and returns the Resource Group name in UPPERCASE :shrug:
 				DiffSuppressFunc: suppress.CaseDifference,
 			},
@@ -201,9 +199,9 @@ func resourceArmLinuxVirtualMachineScaleSet() *schema.Resource {
 				Type:     schema.TypeString,
 				Optional: true,
 				ValidateFunc: validation.Any(
-					validate.ImageID,
-					validate.SharedImageID,
-					validate.SharedImageVersionID,
+					computeValidate.ImageID,
+					computeValidate.SharedImageID,
+					computeValidate.SharedImageVersionID,
 				),
 			},
 
@@ -351,10 +349,6 @@ func resourceArmLinuxVirtualMachineScaleSetCreate(d *schema.ResourceData, meta i
 	if v, ok := d.GetOk("computer_name_prefix"); ok && len(v.(string)) > 0 {
 		computerNamePrefix = v.(string)
 	} else {
-		_, errs := ValidateLinuxComputerNamePrefix(d.Get("name"), "computer_name_prefix")
-		if len(errs) > 0 {
-			return fmt.Errorf("unable to assume default computer name prefix %s. Please adjust the %q, or specify an explicit %q", errs[0], "name", "computer_name_prefix")
-		}
 		computerNamePrefix = name
 	}
 
@@ -435,8 +429,6 @@ func resourceArmLinuxVirtualMachineScaleSetCreate(d *schema.ResourceData, meta i
 	}
 
 	scaleInPolicy := d.Get("scale_in_policy").(string)
-	automaticRepairsPolicyRaw := d.Get("automatic_instance_repair").([]interface{})
-	automaticRepairsPolicy := ExpandVirtualMachineScaleSetAutomaticRepairsPolicy(automaticRepairsPolicyRaw)
 
 	props := compute.VirtualMachineScaleSet{
 		Location: utils.String(location),
@@ -452,7 +444,6 @@ func resourceArmLinuxVirtualMachineScaleSetCreate(d *schema.ResourceData, meta i
 		Tags:     tags.Expand(t),
 		VirtualMachineScaleSetProperties: &compute.VirtualMachineScaleSetProperties{
 			AdditionalCapabilities:                 additionalCapabilities,
-			AutomaticRepairsPolicy:                 automaticRepairsPolicy,
 			DoNotRunExtensionsOnOverprovisionedVMs: utils.Bool(d.Get("do_not_run_extensions_on_overprovisioned_machines").(bool)),
 			Overprovision:                          utils.Bool(d.Get("overprovision").(bool)),
 			SinglePlacementGroup:                   utils.Bool(d.Get("single_placement_group").(bool)),
@@ -510,7 +501,7 @@ func resourceArmLinuxVirtualMachineScaleSetUpdate(d *schema.ResourceData, meta i
 	ctx, cancel := timeouts.ForUpdate(meta.(*clients.Client).StopContext, d)
 	defer cancel()
 
-	id, err := parse.VirtualMachineScaleSetID(d.Id())
+	id, err := ParseVirtualMachineScaleSetID(d.Id())
 	if err != nil {
 		return err
 	}
@@ -689,11 +680,6 @@ func resourceArmLinuxVirtualMachineScaleSetUpdate(d *schema.ResourceData, meta i
 		updateProps.VirtualMachineProfile.ScheduledEventsProfile = ExpandVirtualMachineScaleSetScheduledEventsProfile(notificationRaw)
 	}
 
-	if d.HasChange("automatic_instance_repair") {
-		automaticRepairsPolicyRaw := d.Get("automatic_instance_repair").([]interface{})
-		updateProps.AutomaticRepairsPolicy = ExpandVirtualMachineScaleSetAutomaticRepairsPolicy(automaticRepairsPolicyRaw)
-	}
-
 	if d.HasChange("identity") {
 		identityRaw := d.Get("identity").([]interface{})
 		identity, err := ExpandVirtualMachineScaleSetIdentity(identityRaw)
@@ -755,7 +741,7 @@ func resourceArmLinuxVirtualMachineScaleSetRead(d *schema.ResourceData, meta int
 	ctx, cancel := timeouts.ForRead(meta.(*clients.Client).StopContext, d)
 	defer cancel()
 
-	id, err := parse.VirtualMachineScaleSetID(d.Id())
+	id, err := ParseVirtualMachineScaleSetID(d.Id())
 	if err != nil {
 		return err
 	}
@@ -803,10 +789,6 @@ func resourceArmLinuxVirtualMachineScaleSetRead(d *schema.ResourceData, meta int
 
 	if err := d.Set("additional_capabilities", FlattenVirtualMachineScaleSetAdditionalCapabilities(props.AdditionalCapabilities)); err != nil {
 		return fmt.Errorf("Error setting `additional_capabilities`: %+v", props.AdditionalCapabilities)
-	}
-
-	if err := d.Set("automatic_instance_repair", FlattenVirtualMachineScaleSetAutomaticRepairsPolicy(props.AutomaticRepairsPolicy)); err != nil {
-		return fmt.Errorf("Error setting `automatic_instance_repair`: %+v", err)
 	}
 
 	d.Set("do_not_run_extensions_on_overprovisioned_machines", props.DoNotRunExtensionsOnOverprovisionedVMs)
@@ -932,7 +914,7 @@ func resourceArmLinuxVirtualMachineScaleSetDelete(d *schema.ResourceData, meta i
 	ctx, cancel := timeouts.ForDelete(meta.(*clients.Client).StopContext, d)
 	defer cancel()
 
-	id, err := parse.VirtualMachineScaleSetID(d.Id())
+	id, err := ParseVirtualMachineScaleSetID(d.Id())
 	if err != nil {
 		return err
 	}

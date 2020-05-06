@@ -35,7 +35,7 @@ func resourceLinuxVirtualMachine() *schema.Resource {
 		Update: resourceLinuxVirtualMachineUpdate,
 		Delete: resourceLinuxVirtualMachineDelete,
 		Importer: azSchema.ValidateResourceIDPriorToImportThen(func(id string) error {
-			_, err := parse.VirtualMachineID(id)
+			_, err := ParseVirtualMachineID(id)
 			return err
 		}, importVirtualMachine(compute.Linux, "azurerm_linux_virtual_machine")),
 
@@ -51,7 +51,7 @@ func resourceLinuxVirtualMachine() *schema.Resource {
 				Type:         schema.TypeString,
 				Required:     true,
 				ForceNew:     true,
-				ValidateFunc: ValidateVmName,
+				ValidateFunc: ValidateLinuxName,
 			},
 
 			"resource_group_name": azure.SchemaResourceGroupName(),
@@ -128,8 +128,9 @@ func resourceLinuxVirtualMachine() *schema.Resource {
 				// Computed since we reuse the VM name if one's not specified
 				Computed: true,
 				ForceNew: true,
-
-				ValidateFunc: ValidateLinuxComputerNameFull,
+				// note: whilst the portal says 1-15 characters it seems to mirror the rules for the vm name
+				// (e.g. 1-15 for Windows, 1-63 for Linux)
+				ValidateFunc: ValidateLinuxName,
 			},
 
 			"custom_data": base64.OptionalSchema(true),
@@ -294,10 +295,6 @@ func resourceLinuxVirtualMachineCreate(d *schema.ResourceData, meta interface{})
 	if v, ok := d.GetOk("computer_name"); ok && len(v.(string)) > 0 {
 		computerName = v.(string)
 	} else {
-		_, errs := ValidateLinuxComputerNameFull(d.Get("name"), "computer_name")
-		if len(errs) > 0 {
-			return fmt.Errorf("unable to assume default computer name %s Please adjust the %q, or specify an explicit %q", errs[0], "name", "computer_name")
-		}
 		computerName = name
 	}
 	disablePasswordAuthentication := d.Get("disable_password_authentication").(bool)
@@ -474,7 +471,7 @@ func resourceLinuxVirtualMachineRead(d *schema.ResourceData, meta interface{}) e
 	ctx, cancel := timeouts.ForRead(meta.(*clients.Client).StopContext, d)
 	defer cancel()
 
-	id, err := parse.VirtualMachineID(d.Id())
+	id, err := ParseVirtualMachineID(d.Id())
 	if err != nil {
 		return err
 	}
@@ -629,7 +626,7 @@ func resourceLinuxVirtualMachineUpdate(d *schema.ResourceData, meta interface{})
 	ctx, cancel := timeouts.ForUpdate(meta.(*clients.Client).StopContext, d)
 	defer cancel()
 
-	id, err := parse.VirtualMachineID(d.Id())
+	id, err := ParseVirtualMachineID(d.Id())
 	if err != nil {
 		return err
 	}
@@ -933,7 +930,7 @@ func resourceLinuxVirtualMachineDelete(d *schema.ResourceData, meta interface{})
 	ctx, cancel := timeouts.ForDelete(meta.(*clients.Client).StopContext, d)
 	defer cancel()
 
-	id, err := parse.VirtualMachineID(d.Id())
+	id, err := ParseVirtualMachineID(d.Id())
 	if err != nil {
 		return err
 	}

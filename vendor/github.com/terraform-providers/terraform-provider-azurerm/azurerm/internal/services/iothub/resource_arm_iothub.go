@@ -30,7 +30,6 @@ import (
 
 var IothubResourceName = "azurerm_iothub"
 
-// nolint unparam
 func suppressIfTypeIsNot(t string) schema.SchemaDiffSuppressFunc {
 	return func(k, old, new string, d *schema.ResourceData) bool {
 		path := strings.Split(k, ".")
@@ -39,7 +38,6 @@ func suppressIfTypeIsNot(t string) schema.SchemaDiffSuppressFunc {
 	}
 }
 
-// nolint unparam
 func supressWhenAll(fs ...schema.SchemaDiffSuppressFunc) schema.SchemaDiffSuppressFunc {
 	return func(k, old, new string, d *schema.ResourceData) bool {
 		for _, f := range fs {
@@ -485,10 +483,14 @@ func resourceArmIotHubCreateUpdate(d *schema.ResourceData, meta interface{}) err
 	}
 
 	if _, ok := d.GetOk("endpoint"); ok {
-		routingProperties.Endpoints = expandIoTHubEndpoints(d, subscriptionID)
+		endpoints, err := expandIoTHubEndpoints(d, subscriptionID)
+		if err != nil {
+			return fmt.Errorf("Error expanding `endpoint`: %+v", err)
+		}
+		routingProperties.Endpoints = endpoints
 	}
 
-	storageEndpoints, messagingEndpoints, enableFileUploadNotifications := expandIoTHubFileUpload(d)
+	storageEndpoints, messagingEndpoints, enableFileUploadNotifications, err := expandIoTHubFileUpload(d)
 	if err != nil {
 		return fmt.Errorf("Error expanding `file_upload`: %+v", err)
 	}
@@ -724,7 +726,7 @@ func expandIoTHubRoutes(d *schema.ResourceData) *[]devices.RouteProperties {
 	return &routeProperties
 }
 
-func expandIoTHubFileUpload(d *schema.ResourceData) (map[string]*devices.StorageEndpointProperties, map[string]*devices.MessagingEndpointProperties, bool) {
+func expandIoTHubFileUpload(d *schema.ResourceData) (map[string]*devices.StorageEndpointProperties, map[string]*devices.MessagingEndpointProperties, bool, error) {
 	fileUploadList := d.Get("file_upload").([]interface{})
 
 	storageEndpointProperties := make(map[string]*devices.StorageEndpointProperties)
@@ -755,10 +757,10 @@ func expandIoTHubFileUpload(d *schema.ResourceData) (map[string]*devices.Storage
 		}
 	}
 
-	return storageEndpointProperties, messagingEndpointProperties, notifications
+	return storageEndpointProperties, messagingEndpointProperties, notifications, nil
 }
 
-func expandIoTHubEndpoints(d *schema.ResourceData, subscriptionId string) *devices.RoutingEndpoints {
+func expandIoTHubEndpoints(d *schema.ResourceData, subscriptionId string) (*devices.RoutingEndpoints, error) {
 	routeEndpointList := d.Get("endpoint").([]interface{})
 
 	serviceBusQueueEndpointProperties := make([]devices.RoutingServiceBusQueueEndpointProperties, 0)
@@ -830,7 +832,7 @@ func expandIoTHubEndpoints(d *schema.ResourceData, subscriptionId string) *devic
 		ServiceBusTopics:  &serviceBusTopicEndpointProperties,
 		EventHubs:         &eventHubProperties,
 		StorageContainers: &storageContainerProperties,
-	}
+	}, nil
 }
 
 func expandIoTHubFallbackRoute(d *schema.ResourceData) *devices.FallbackRouteProperties {

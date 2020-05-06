@@ -240,7 +240,6 @@ func resourceArmStorageManagementPolicyDelete(d *schema.ResourceData, meta inter
 	return nil
 }
 
-// nolint unparam
 func expandStorageManagementPolicyRules(d *schema.ResourceData) (*[]storage.ManagementPolicyRule, error) {
 	var result []storage.ManagementPolicyRule
 
@@ -248,13 +247,17 @@ func expandStorageManagementPolicyRules(d *schema.ResourceData) (*[]storage.Mana
 
 	for k, v := range rules {
 		if v != nil {
-			result = append(result, expandStorageManagementPolicyRule(d, k))
+			policyRule, err := expandStorageManagementPolicyRule(d, k)
+			if err != nil {
+				return nil, err
+			}
+			result = append(result, policyRule)
 		}
 	}
 	return &result, nil
 }
 
-func expandStorageManagementPolicyRule(d *schema.ResourceData, ruleIndex int) storage.ManagementPolicyRule {
+func expandStorageManagementPolicyRule(d *schema.ResourceData, ruleIndex int) (storage.ManagementPolicyRule, error) {
 	name := d.Get(fmt.Sprintf("rule.%d.name", ruleIndex)).(string)
 	enabled := d.Get(fmt.Sprintf("rule.%d.enabled", ruleIndex)).(bool)
 	typeVal := "Lifecycle"
@@ -330,7 +333,7 @@ func expandStorageManagementPolicyRule(d *schema.ResourceData, ruleIndex int) st
 		Type:       &typeVal,
 		Definition: &definition,
 	}
-	return rule
+	return rule, nil
 }
 
 func flattenStorageManagementPolicyRules(armRules *[]storage.ManagementPolicyRule) []interface{} {

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/services/frontdoor/mgmt/2020-01-01/frontdoor"
+	"github.com/Azure/azure-sdk-for-go/services/frontdoor/mgmt/2019-11-01/frontdoor"
 	"github.com/hashicorp/go-azure-helpers/response"
 	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/helper/validation"
@@ -62,22 +62,12 @@ func resourceArmFrontDoor() *schema.Resource {
 				Default:  true,
 			},
 
-			// TODO: In 3.0
-			// Move 'enforce_backend_pools_certificate_name_check' and 'backend_pools_send_receive_timeout_seconds'
-			// into a 'backend_pool_settings' block
 			"enforce_backend_pools_certificate_name_check": {
 				Type:     schema.TypeBool,
 				Required: true,
 			},
 
-			"backend_pools_send_receive_timeout_seconds": {
-				Type:         schema.TypeInt,
-				Optional:     true,
-				Default:      60,
-				ValidateFunc: validation.IntBetween(0, 240),
-			},
-
-			// TODO: Remove in 3.0
+			// remove in 3.0
 			"location": {
 				Type:       schema.TypeString,
 				Optional:   true,
@@ -537,7 +527,6 @@ func resourceArmFrontDoorCreateUpdate(d *schema.ResourceData, meta interface{}) 
 	backendPools := d.Get("backend_pool").([]interface{})
 	frontendEndpoints := d.Get("frontend_endpoint").([]interface{})
 	backendPoolsSettings := d.Get("enforce_backend_pools_certificate_name_check").(bool)
-	backendPoolsSendReceiveTimeoutSeconds := int32(d.Get("backend_pools_send_receive_timeout_seconds").(int))
 	enabledState := d.Get("load_balancer_enabled").(bool)
 
 	t := d.Get("tags").(map[string]interface{})
@@ -548,7 +537,7 @@ func resourceArmFrontDoorCreateUpdate(d *schema.ResourceData, meta interface{}) 
 			FriendlyName:          utils.String(friendlyName),
 			RoutingRules:          expandArmFrontDoorRoutingRule(routingRules, frontDoorPath),
 			BackendPools:          expandArmFrontDoorBackendPools(backendPools, frontDoorPath),
-			BackendPoolsSettings:  expandArmFrontDoorBackendPoolsSettings(backendPoolsSettings, backendPoolsSendReceiveTimeoutSeconds),
+			BackendPoolsSettings:  expandArmFrontDoorBackendPoolsSettings(backendPoolsSettings),
 			FrontendEndpoints:     expandArmFrontDoorFrontendEndpoint(frontendEndpoints, frontDoorPath),
 			HealthProbeSettings:   expandArmFrontDoorHealthProbeSettingsModel(healthProbeSettings, frontDoorPath),
 			LoadBalancingSettings: expandArmFrontDoorLoadBalancingSettingsModel(loadBalancingSettings, frontDoorPath),
@@ -694,14 +683,8 @@ func resourceArmFrontDoorRead(d *schema.ResourceData, meta interface{}) error {
 			return fmt.Errorf("setting `backend_pool`: %+v", err)
 		}
 
-		backendPoolSettings := flattenArmFrontDoorBackendPoolsSettings(properties.BackendPoolsSettings)
-
-		if err := d.Set("enforce_backend_pools_certificate_name_check", backendPoolSettings["enforce_backend_pools_certificate_name_check"].(bool)); err != nil {
+		if err := d.Set("enforce_backend_pools_certificate_name_check", flattenArmFrontDoorBackendPoolsSettings(properties.BackendPoolsSettings)); err != nil {
 			return fmt.Errorf("setting `enforce_backend_pools_certificate_name_check`: %+v", err)
-		}
-
-		if err := d.Set("backend_pools_send_receive_timeout_seconds", backendPoolSettings["backend_pools_send_receive_timeout_seconds"].(int32)); err != nil {
-			return fmt.Errorf("setting `backend_pools_send_receive_timeout_seconds`: %+v", err)
 		}
 
 		d.Set("cname", properties.Cname)
@@ -849,7 +832,7 @@ func expandArmFrontDoorBackendEnabledState(isEnabled bool) frontdoor.BackendEnab
 	return frontdoor.Disabled
 }
 
-func expandArmFrontDoorBackendPoolsSettings(enforceCertificateNameCheck bool, backendPoolsSendReceiveTimeoutSeconds int32) *frontdoor.BackendPoolsSettings {
+func expandArmFrontDoorBackendPoolsSettings(enforceCertificateNameCheck bool) *frontdoor.BackendPoolsSettings {
 	enforceCheck := frontdoor.EnforceCertificateNameCheckEnabledStateDisabled
 
 	if enforceCertificateNameCheck {
@@ -858,7 +841,6 @@ func expandArmFrontDoorBackendPoolsSettings(enforceCertificateNameCheck bool, ba
 
 	result := frontdoor.BackendPoolsSettings{
 		EnforceCertificateNameCheck: enforceCheck,
-		SendRecvTimeoutSeconds:      utils.Int32(backendPoolsSendReceiveTimeoutSeconds),
 	}
 
 	return &result
@@ -1198,25 +1180,17 @@ func flattenArmFrontDoorBackendPools(input *[]frontdoor.BackendPool) []map[strin
 	return output
 }
 
-func flattenArmFrontDoorBackendPoolsSettings(input *frontdoor.BackendPoolsSettings) map[string]interface{} {
-	result := make(map[string]interface{})
-
-	// Set default values
-	result["enforce_backend_pools_certificate_name_check"] = true
-	result["backend_pools_send_receive_timeout_seconds"] = int32(60)
-
+func flattenArmFrontDoorBackendPoolsSettings(input *frontdoor.BackendPoolsSettings) bool {
 	if input == nil {
-		return result
+		return true
 	}
 
-	result["enforce_backend_pools_certificate_name_check"] = false
+	result := false
 
-	if enforceCertificateNameCheck := input.EnforceCertificateNameCheck; enforceCertificateNameCheck != "" && enforceCertificateNameCheck == frontdoor.EnforceCertificateNameCheckEnabledStateEnabled {
-		result["enforce_backend_pools_certificate_name_check"] = true
-	}
-
-	if sendRecvTimeoutSeconds := input.SendRecvTimeoutSeconds; sendRecvTimeoutSeconds != nil {
-		result["backend_pools_send_receive_timeout_seconds"] = *sendRecvTimeoutSeconds
+	if enforceCertificateNameCheck := input.EnforceCertificateNameCheck; enforceCertificateNameCheck != "" {
+		if enforceCertificateNameCheck == frontdoor.EnforceCertificateNameCheckEnabledStateEnabled {
+			result = true
+		}
 	}
 
 	return result
@@ -1378,7 +1352,7 @@ func flattenArmFrontDoorHealthProbeSettingsModel(input *[]frontdoor.HealthProbeS
 				result["probe_method"] = strings.ToUpper(string(healthProbeMethod))
 			}
 			if enabled := properties.EnabledState; enabled != "" {
-				result["enabled"] = enabled == frontdoor.HealthProbeEnabledEnabled
+				result["enabled"] = (enabled == frontdoor.HealthProbeEnabledEnabled)
 			}
 			result["protocol"] = string(properties.Protocol)
 		}
@@ -1482,7 +1456,7 @@ func flattenArmFrontDoorRoutingRule(input *[]frontdoor.RoutingRule, oldBlocks in
 						}
 
 						if dynamicCompression := cacheConfiguration.DynamicCompression; dynamicCompression != "" {
-							c["cache_use_dynamic_compression"] = string(dynamicCompression) == string(frontdoor.DynamicCompressionEnabledEnabled)
+							c["cache_use_dynamic_compression"] = bool(string(dynamicCompression) == string(frontdoor.DynamicCompressionEnabledEnabled))
 						}
 					} else {
 						// if the cache is disabled, set the default values or revert to what they were in the previous plan

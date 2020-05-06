@@ -5,12 +5,13 @@ import (
 	"log"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/services/apimanagement/mgmt/2019-12-01/apimanagement"
+	"github.com/Azure/azure-sdk-for-go/services/apimanagement/mgmt/2018-01-01/apimanagement"
 	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
 	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/helpers/azure"
 	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/helpers/suppress"
 	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/helpers/tf"
 	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/internal/clients"
+	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/internal/features"
 	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/internal/timeouts"
 	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/utils"
 )
@@ -65,11 +66,11 @@ func resourceArmApiManagementProductPolicyCreateUpdate(d *schema.ResourceData, m
 	serviceName := d.Get("api_management_name").(string)
 	productID := d.Get("product_id").(string)
 
-	if d.IsNewResource() {
-		existing, err := client.Get(ctx, resourceGroup, serviceName, productID, apimanagement.PolicyExportFormatXML)
+	if features.ShouldResourcesBeImported() && d.IsNewResource() {
+		existing, err := client.Get(ctx, resourceGroup, serviceName, productID)
 		if err != nil {
 			if !utils.ResponseWasNotFound(existing.Response) {
-				return fmt.Errorf("checking for presence of existing Product Policy (API Management Service %q / Product %q / Resource Group %q): %s", serviceName, productID, resourceGroup, err)
+				return fmt.Errorf("Error checking for presence of existing Product Policy (API Management Service %q / Product %q / Resource Group %q): %s", serviceName, productID, resourceGroup, err)
 			}
 		}
 
@@ -85,15 +86,15 @@ func resourceArmApiManagementProductPolicyCreateUpdate(d *schema.ResourceData, m
 
 	if xmlContent != "" {
 		parameters.PolicyContractProperties = &apimanagement.PolicyContractProperties{
-			Format: apimanagement.XML,
-			Value:  utils.String(xmlContent),
+			ContentFormat: apimanagement.XML,
+			PolicyContent: utils.String(xmlContent),
 		}
 	}
 
 	if xmlLink != "" {
 		parameters.PolicyContractProperties = &apimanagement.PolicyContractProperties{
-			Format: apimanagement.XMLLink,
-			Value:  utils.String(xmlLink),
+			ContentFormat: apimanagement.XMLLink,
+			PolicyContent: utils.String(xmlLink),
 		}
 	}
 
@@ -102,12 +103,12 @@ func resourceArmApiManagementProductPolicyCreateUpdate(d *schema.ResourceData, m
 	}
 
 	if _, err := client.CreateOrUpdate(ctx, resourceGroup, serviceName, productID, parameters, ""); err != nil {
-		return fmt.Errorf("creating or updating Product Policy (Resource Group %q / API Management Service %q / Product %q): %+v", resourceGroup, serviceName, productID, err)
+		return fmt.Errorf("Error creating or updating Product Policy (Resource Group %q / API Management Service %q / Product %q): %+v", resourceGroup, serviceName, productID, err)
 	}
 
-	resp, err := client.Get(ctx, resourceGroup, serviceName, productID, apimanagement.PolicyExportFormatXML)
+	resp, err := client.Get(ctx, resourceGroup, serviceName, productID)
 	if err != nil {
-		return fmt.Errorf("retrieving Product Policy (Resource Group %q / API Management Service %q / Product %q): %+v", resourceGroup, serviceName, productID, err)
+		return fmt.Errorf("Error retrieving Product Policy (Resource Group %q / API Management Service %q / Product %q): %+v", resourceGroup, serviceName, productID, err)
 	}
 	if resp.ID == nil {
 		return fmt.Errorf("Cannot read ID for Product Policy (Resource Group %q / API Management Service %q / Product %q): %+v", resourceGroup, serviceName, productID, err)
@@ -130,7 +131,7 @@ func resourceArmApiManagementProductPolicyRead(d *schema.ResourceData, meta inte
 	serviceName := id.Path["service"]
 	productID := id.Path["products"]
 
-	resp, err := client.Get(ctx, resourceGroup, serviceName, productID, apimanagement.PolicyExportFormatXML)
+	resp, err := client.Get(ctx, resourceGroup, serviceName, productID)
 	if err != nil {
 		if utils.ResponseWasNotFound(resp.Response) {
 			log.Printf("[DEBUG] Product Policy (Resource Group %q / API Management Service %q / Product %q) was not found - removing from state!", resourceGroup, serviceName, productID)
@@ -138,7 +139,7 @@ func resourceArmApiManagementProductPolicyRead(d *schema.ResourceData, meta inte
 			return nil
 		}
 
-		return fmt.Errorf("making Read request for Product Policy (Resource Group %q / API Management Service %q / Product %q): %+v", resourceGroup, serviceName, productID, err)
+		return fmt.Errorf("Error making Read request for Product Policy (Resource Group %q / API Management Service %q / Product %q): %+v", resourceGroup, serviceName, productID, err)
 	}
 
 	d.Set("resource_group_name", resourceGroup)
@@ -148,7 +149,7 @@ func resourceArmApiManagementProductPolicyRead(d *schema.ResourceData, meta inte
 	if properties := resp.PolicyContractProperties; properties != nil {
 		// when you submit an `xml_link` to the API, the API downloads this link and stores it as `xml_content`
 		// as such there is no way to set `xml_link` and we'll let Terraform handle it
-		d.Set("xml_content", properties.Value)
+		d.Set("xml_content", properties.PolicyContent)
 	}
 
 	return nil
@@ -169,7 +170,7 @@ func resourceArmApiManagementProductPolicyDelete(d *schema.ResourceData, meta in
 
 	if resp, err := client.Delete(ctx, resourceGroup, serviceName, productID, ""); err != nil {
 		if !utils.ResponseWasNotFound(resp) {
-			return fmt.Errorf("deleting Product Policy (Resource Group %q / API Management Service %q / Product %q): %+v", resourceGroup, serviceName, productID, err)
+			return fmt.Errorf("Error deleting Product Policy (Resource Group %q / API Management Service %q / Product %q): %+v", resourceGroup, serviceName, productID, err)
 		}
 	}
 

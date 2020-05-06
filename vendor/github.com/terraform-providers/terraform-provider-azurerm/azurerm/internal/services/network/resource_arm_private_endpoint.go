@@ -13,7 +13,6 @@ import (
 	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/helpers/tf"
 	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/internal/clients"
 	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/internal/features"
-	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/internal/tags"
 	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/internal/timeouts"
 	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/utils"
 )
@@ -99,7 +98,8 @@ func resourceArmPrivateEndpoint() *schema.Resource {
 				},
 			},
 
-			"tags": tags.Schema(),
+			// tags has been removed
+			// API Issue "Unable to remove Tags from Private Endpoint": https://github.com/Azure/azure-sdk-for-go/issues/6467
 		},
 	}
 }
@@ -142,7 +142,6 @@ func resourceArmPrivateEndpointCreateUpdate(d *schema.ResourceData, meta interfa
 				ID: utils.String(subnetId),
 			},
 		},
-		Tags: tags.Expand(d.Get("tags").(map[string]interface{})),
 	}
 
 	future, err := client.CreateOrUpdate(ctx, resourceGroup, name, parameters)
@@ -224,7 +223,8 @@ func resourceArmPrivateEndpointRead(d *schema.ResourceData, meta interface{}) er
 		d.Set("subnet_id", subnetId)
 	}
 
-	return tags.FlattenAndSet(d, resp.Tags)
+	// API Issue "Unable to remove Tags from Private Link Endpoint": https://github.com/Azure/azure-sdk-for-go/issues/6467
+	return nil
 }
 
 func resourceArmPrivateEndpointDelete(d *schema.ResourceData, meta interface{}) error {

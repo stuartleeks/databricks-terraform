@@ -305,7 +305,11 @@ func resourceArmRedisCacheCreate(d *schema.ResourceData, meta interface{}) error
 		}
 	}
 
-	patchSchedule := expandRedisPatchSchedule(d)
+	patchSchedule, err := expandRedisPatchSchedule(d)
+	if err != nil {
+		return fmt.Errorf("Error parsing Patch Schedule: %+v", err)
+	}
+
 	redisConfiguration, err := expandRedisConfiguration(d)
 	if err != nil {
 		return fmt.Errorf("Error parsing Redis Configuration: %+v", err)
@@ -472,7 +476,10 @@ func resourceArmRedisCacheUpdate(d *schema.ResourceData, meta interface{}) error
 
 	d.SetId(*read.ID)
 
-	patchSchedule := expandRedisPatchSchedule(d)
+	patchSchedule, err := expandRedisPatchSchedule(d)
+	if err != nil {
+		return fmt.Errorf("Error parsing Patch Schedule: %+v", err)
+	}
 
 	patchClient := meta.(*clients.Client).Redis.PatchSchedulesClient
 	if patchSchedule == nil || len(*patchSchedule.ScheduleEntries.ScheduleEntries) == 0 {
@@ -570,9 +577,8 @@ func resourceArmRedisCacheRead(d *schema.ResourceData, meta interface{}) error {
 	d.Set("secondary_access_key", keysResp.SecondaryKey)
 
 	if props != nil {
-		enableSslPort := !*props.EnableNonSslPort
-		d.Set("primary_connection_string", getRedisConnectionString(*props.HostName, *props.SslPort, *keysResp.PrimaryKey, enableSslPort))
-		d.Set("secondary_connection_string", getRedisConnectionString(*props.HostName, *props.SslPort, *keysResp.SecondaryKey, enableSslPort))
+		d.Set("primary_connection_string", getRedisConnectionString(*props.HostName, *props.SslPort, *keysResp.PrimaryKey, *props.EnableNonSslPort))
+		d.Set("secondary_connection_string", getRedisConnectionString(*props.HostName, *props.SslPort, *keysResp.SecondaryKey, *props.EnableNonSslPort))
 	}
 
 	return tags.FlattenAndSet(d, resp.Tags)
@@ -725,10 +731,10 @@ func expandRedisConfiguration(d *schema.ResourceData) (map[string]*string, error
 	return output, nil
 }
 
-func expandRedisPatchSchedule(d *schema.ResourceData) *redis.PatchSchedule {
+func expandRedisPatchSchedule(d *schema.ResourceData) (*redis.PatchSchedule, error) {
 	v, ok := d.GetOk("patch_schedule")
 	if !ok {
-		return nil
+		return nil, nil
 	}
 
 	scheduleValues := v.([]interface{})
@@ -750,7 +756,7 @@ func expandRedisPatchSchedule(d *schema.ResourceData) *redis.PatchSchedule {
 			ScheduleEntries: &entries,
 		},
 	}
-	return &schedule
+	return &schedule, nil
 }
 
 func flattenRedisConfiguration(input map[string]*string) ([]interface{}, error) {

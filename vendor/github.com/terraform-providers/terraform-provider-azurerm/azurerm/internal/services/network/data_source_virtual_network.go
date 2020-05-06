@@ -31,6 +31,7 @@ func dataSourceArmVirtualNetwork() *schema.Resource {
 			"resource_group_name": azure.SchemaResourceGroupNameForDataSource(),
 
 			"location": azure.SchemaLocationForDataSource(),
+
 			"address_space": {
 				Type:     schema.TypeList,
 				Computed: true,
@@ -45,11 +46,6 @@ func dataSourceArmVirtualNetwork() *schema.Resource {
 				Elem: &schema.Schema{
 					Type: schema.TypeString,
 				},
-			},
-
-			"guid": {
-				Type:     schema.TypeString,
-				Computed: true,
 			},
 
 			"subnets": {
@@ -98,8 +94,6 @@ func dataSourceArmVnetRead(d *schema.ResourceData, meta interface{}) error {
 	}
 
 	if props := resp.VirtualNetworkPropertiesFormat; props != nil {
-		d.Set("guid", props.ResourceGUID)
-
 		if as := props.AddressSpace; as != nil {
 			if err := d.Set("address_space", utils.FlattenStringSlice(as.AddressPrefixes)); err != nil {
 				return fmt.Errorf("error setting `address_space`: %v", err)

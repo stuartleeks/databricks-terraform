@@ -107,7 +107,7 @@ func resourceArmMonitorDiagnosticSetting() *schema.Resource {
 
 						"retention_policy": {
 							Type:     schema.TypeList,
-							Optional: true,
+							Required: true,
 							MaxItems: 1,
 							Elem: &schema.Resource{
 								Schema: map[string]*schema.Schema{
@@ -146,7 +146,7 @@ func resourceArmMonitorDiagnosticSetting() *schema.Resource {
 
 						"retention_policy": {
 							Type:     schema.TypeList,
-							Optional: true,
+							Required: true,
 							MaxItems: 1,
 							Elem: &schema.Resource{
 								Schema: map[string]*schema.Schema{
@@ -384,22 +384,19 @@ func expandMonitorDiagnosticsSettingsLogs(input []interface{}) []insights.LogSet
 
 		category := v["category"].(string)
 		enabled := v["enabled"].(bool)
+
 		policiesRaw := v["retention_policy"].([]interface{})
-		var retentionPolicy *insights.RetentionPolicy
-		if len(policiesRaw) != 0 {
-			policyRaw := policiesRaw[0].(map[string]interface{})
-			retentionDays := policyRaw["days"].(int)
-			retentionEnabled := policyRaw["enabled"].(bool)
-			retentionPolicy = &insights.RetentionPolicy{
-				Days:    utils.Int32(int32(retentionDays)),
-				Enabled: utils.Bool(retentionEnabled),
-			}
-		}
+		policyRaw := policiesRaw[0].(map[string]interface{})
+		retentionDays := policyRaw["days"].(int)
+		retentionEnabled := policyRaw["enabled"].(bool)
 
 		output := insights.LogSettings{
-			Category:        utils.String(category),
-			Enabled:         utils.Bool(enabled),
-			RetentionPolicy: retentionPolicy,
+			Category: utils.String(category),
+			Enabled:  utils.Bool(enabled),
+			RetentionPolicy: &insights.RetentionPolicy{
+				Days:    utils.Int32(int32(retentionDays)),
+				Enabled: utils.Bool(retentionEnabled),
+			},
 		}
 
 		results = append(results, output)
@@ -459,20 +456,18 @@ func expandMonitorDiagnosticsSettingsMetrics(input []interface{}) []insights.Met
 		enabled := v["enabled"].(bool)
 
 		policiesRaw := v["retention_policy"].([]interface{})
-		var retentionPolicy *insights.RetentionPolicy
-		if policiesRaw != nil {
-			policyRaw := policiesRaw[0].(map[string]interface{})
-			retentionDays := policyRaw["days"].(int)
-			retentionEnabled := policyRaw["enabled"].(bool)
-			retentionPolicy = &insights.RetentionPolicy{
+		policyRaw := policiesRaw[0].(map[string]interface{})
+
+		retentionDays := policyRaw["days"].(int)
+		retentionEnabled := policyRaw["enabled"].(bool)
+
+		output := insights.MetricSettings{
+			Category: utils.String(category),
+			Enabled:  utils.Bool(enabled),
+			RetentionPolicy: &insights.RetentionPolicy{
 				Days:    utils.Int32(int32(retentionDays)),
 				Enabled: utils.Bool(retentionEnabled),
-			}
-		}
-		output := insights.MetricSettings{
-			Category:        utils.String(category),
-			Enabled:         utils.Bool(enabled),
-			RetentionPolicy: retentionPolicy,
+			},
 		}
 
 		results = append(results, output)

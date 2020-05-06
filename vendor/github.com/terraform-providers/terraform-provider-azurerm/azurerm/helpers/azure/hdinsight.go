@@ -46,19 +46,6 @@ func SchemaHDInsightTier() *schema.Schema {
 	}
 }
 
-func SchemaHDInsightTls() *schema.Schema {
-	return &schema.Schema{
-		Type:     schema.TypeString,
-		Optional: true,
-		ForceNew: true,
-		ValidateFunc: validation.StringInSlice([]string{
-			"1.0",
-			"1.1",
-			"1.2",
-		}, false),
-	}
-}
-
 func SchemaHDInsightClusterVersion() *schema.Schema {
 	return &schema.Schema{
 		Type:             schema.TypeString,

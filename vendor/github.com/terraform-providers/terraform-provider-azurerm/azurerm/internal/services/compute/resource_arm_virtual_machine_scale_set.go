@@ -9,6 +9,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2019-07-01/compute"
 	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/internal/clients"
+	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/internal/features"
 	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/internal/tags"
 	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/internal/timeouts"
 
@@ -795,7 +796,7 @@ func resourceArmVirtualMachineScaleSetCreateUpdate(d *schema.ResourceData, meta 
 	name := d.Get("name").(string)
 	resGroup := d.Get("resource_group_name").(string)
 
-	if d.IsNewResource() {
+	if features.ShouldResourcesBeImported() && d.IsNewResource() {
 		existing, err := client.Get(ctx, resGroup, name)
 		if err != nil {
 			if !utils.ResponseWasNotFound(existing.Response) {
@@ -812,7 +813,10 @@ func resourceArmVirtualMachineScaleSetCreateUpdate(d *schema.ResourceData, meta 
 	t := d.Get("tags").(map[string]interface{})
 	zones := azure.ExpandZones(d.Get("zones").([]interface{}))
 
-	sku := expandVirtualMachineScaleSetSku(d)
+	sku, err := expandVirtualMachineScaleSetSku(d)
+	if err != nil {
+		return err
+	}
 
 	storageProfile := compute.VirtualMachineScaleSetStorageProfile{}
 	osDisk, err := expandAzureRMVirtualMachineScaleSetsStorageProfileOsDisk(d)
@@ -822,7 +826,11 @@ func resourceArmVirtualMachineScaleSetCreateUpdate(d *schema.ResourceData, meta 
 	storageProfile.OsDisk = osDisk
 
 	if _, ok := d.GetOk("storage_profile_data_disk"); ok {
-		storageProfile.DataDisks = expandAzureRMVirtualMachineScaleSetsStorageProfileDataDisk(d)
+		dataDisks, err2 := expandAzureRMVirtualMachineScaleSetsStorageProfileDataDisk(d)
+		if err2 != nil {
+			return err2
+		}
+		storageProfile.DataDisks = &dataDisks
 	}
 
 	if _, ok := d.GetOk("storage_profile_image_reference"); ok {
@@ -833,7 +841,7 @@ func resourceArmVirtualMachineScaleSetCreateUpdate(d *schema.ResourceData, meta 
 		storageProfile.ImageReference = imageRef
 	}
 
-	osProfile := expandAzureRMVirtualMachineScaleSetsOsProfile(d)
+	osProfile, err := expandAzureRMVirtualMachineScaleSetsOsProfile(d)
 	if err != nil {
 		return err
 	}
@@ -908,7 +916,12 @@ func resourceArmVirtualMachineScaleSetCreateUpdate(d *schema.ResourceData, meta 
 	}
 
 	if _, ok := d.GetOk("plan"); ok {
-		properties.Plan = expandAzureRmVirtualMachineScaleSetPlan(d)
+		plan, err2 := expandAzureRmVirtualMachineScaleSetPlan(d)
+		if err2 != nil {
+			return err2
+		}
+
+		properties.Plan = plan
 	}
 
 	future, err := client.CreateOrUpdate(ctx, resGroup, name, properties)
@@ -1703,9 +1716,9 @@ func resourceArmVirtualMachineScaleSetExtensionHash(v interface{}) int {
 		if settings != "" {
 			expandedSettings, err := structure.ExpandJsonFromString(settings)
 			if err == nil {
-				serializedSettings, err := structure.FlattenJsonToString(expandedSettings)
+				serialisedSettings, err := structure.FlattenJsonToString(expandedSettings)
 				if err == nil {
-					buf.WriteString(fmt.Sprintf("%s-", serializedSettings))
+					buf.WriteString(fmt.Sprintf("%s-", serialisedSettings))
 				}
 			}
 		}
@@ -1714,7 +1727,7 @@ func resourceArmVirtualMachineScaleSetExtensionHash(v interface{}) int {
 	return hashcode.String(buf.String())
 }
 
-func expandVirtualMachineScaleSetSku(d *schema.ResourceData) *compute.Sku {
+func expandVirtualMachineScaleSetSku(d *schema.ResourceData) (*compute.Sku, error) {
 	skuConfig := d.Get("sku").([]interface{})
 	config := skuConfig[0].(map[string]interface{})
 
@@ -1727,7 +1740,7 @@ func expandVirtualMachineScaleSetSku(d *schema.ResourceData) *compute.Sku {
 		sku.Tier = &tier
 	}
 
-	return sku
+	return sku, nil
 }
 
 func expandAzureRmRollingUpgradePolicy(d *schema.ResourceData) *compute.RollingUpgradePolicy {
@@ -1893,7 +1906,7 @@ func expandAzureRmVirtualMachineScaleSetNetworkProfile(d *schema.ResourceData) *
 	}
 }
 
-func expandAzureRMVirtualMachineScaleSetsOsProfile(d *schema.ResourceData) *compute.VirtualMachineScaleSetOSProfile {
+func expandAzureRMVirtualMachineScaleSetsOsProfile(d *schema.ResourceData) (*compute.VirtualMachineScaleSetOSProfile, error) {
 	osProfileConfigs := d.Get("os_profile").([]interface{})
 
 	osProfileConfig := osProfileConfigs[0].(map[string]interface{})
@@ -1924,17 +1937,24 @@ func expandAzureRMVirtualMachineScaleSetsOsProfile(d *schema.ResourceData) *comp
 	}
 
 	if _, ok := d.GetOk("os_profile_linux_config"); ok {
-		osProfile.LinuxConfiguration = expandAzureRmVirtualMachineScaleSetOsProfileLinuxConfig(d)
+		linuxConfig, err := expandAzureRmVirtualMachineScaleSetOsProfileLinuxConfig(d)
+		if err != nil {
+			return nil, err
+		}
+		osProfile.LinuxConfiguration = linuxConfig
 	}
 
 	if _, ok := d.GetOk("os_profile_windows_config"); ok {
-		winConfig := expandAzureRmVirtualMachineScaleSetOsProfileWindowsConfig(d)
+		winConfig, err := expandAzureRmVirtualMachineScaleSetOsProfileWindowsConfig(d)
+		if err != nil {
+			return nil, err
+		}
 		if winConfig != nil {
 			osProfile.WindowsConfiguration = winConfig
 		}
 	}
 
-	return osProfile
+	return osProfile, nil
 }
 
 func expandAzureRMVirtualMachineScaleSetsDiagnosticProfile(d *schema.ResourceData) compute.DiagnosticsProfile {
@@ -2041,7 +2061,7 @@ func expandAzureRMVirtualMachineScaleSetsStorageProfileOsDisk(d *schema.Resource
 	return osDisk, nil
 }
 
-func expandAzureRMVirtualMachineScaleSetsStorageProfileDataDisk(d *schema.ResourceData) *[]compute.VirtualMachineScaleSetDataDisk {
+func expandAzureRMVirtualMachineScaleSetsStorageProfileDataDisk(d *schema.ResourceData) ([]compute.VirtualMachineScaleSetDataDisk, error) {
 	disks := d.Get("storage_profile_data_disk").([]interface{})
 	dataDisks := make([]compute.VirtualMachineScaleSetDataDisk, 0, len(disks))
 	for _, diskConfig := range disks {
@@ -2078,7 +2098,7 @@ func expandAzureRMVirtualMachineScaleSetsStorageProfileDataDisk(d *schema.Resour
 		dataDisks = append(dataDisks, dataDisk)
 	}
 
-	return &dataDisks
+	return dataDisks, nil
 }
 
 func expandAzureRmVirtualMachineScaleSetStorageProfileImageReference(d *schema.ResourceData) (*compute.ImageReference, error) {
@@ -2111,7 +2131,7 @@ func expandAzureRmVirtualMachineScaleSetStorageProfileImageReference(d *schema.R
 	return &imageReference, nil
 }
 
-func expandAzureRmVirtualMachineScaleSetOsProfileLinuxConfig(d *schema.ResourceData) *compute.LinuxConfiguration {
+func expandAzureRmVirtualMachineScaleSetOsProfileLinuxConfig(d *schema.ResourceData) (*compute.LinuxConfiguration, error) {
 	osProfilesLinuxConfig := d.Get("os_profile_linux_config").(*schema.Set).List()
 
 	linuxConfig := osProfilesLinuxConfig[0].(map[string]interface{})
@@ -2142,10 +2162,10 @@ func expandAzureRmVirtualMachineScaleSetOsProfileLinuxConfig(d *schema.ResourceD
 		},
 	}
 
-	return config
+	return config, nil
 }
 
-func expandAzureRmVirtualMachineScaleSetOsProfileWindowsConfig(d *schema.ResourceData) *compute.WindowsConfiguration {
+func expandAzureRmVirtualMachineScaleSetOsProfileWindowsConfig(d *schema.ResourceData) (*compute.WindowsConfiguration, error) {
 	osProfilesWindowsConfig := d.Get("os_profile_windows_config").(*schema.Set).List()
 
 	osProfileConfig := osProfilesWindowsConfig[0].(map[string]interface{})
@@ -2209,7 +2229,7 @@ func expandAzureRmVirtualMachineScaleSetOsProfileWindowsConfig(d *schema.Resourc
 			config.AdditionalUnattendContent = &additionalConfigContent
 		}
 	}
-	return config
+	return config, nil
 }
 
 func expandAzureRmVirtualMachineScaleSetOsProfileSecrets(d *schema.ResourceData) *[]compute.VaultSecretGroup {
@@ -2311,7 +2331,7 @@ func expandAzureRMVirtualMachineScaleSetExtensions(d *schema.ResourceData) (*com
 	}, nil
 }
 
-func expandAzureRmVirtualMachineScaleSetPlan(d *schema.ResourceData) *compute.Plan {
+func expandAzureRmVirtualMachineScaleSetPlan(d *schema.ResourceData) (*compute.Plan, error) {
 	planConfigs := d.Get("plan").(*schema.Set).List()
 
 	planConfig := planConfigs[0].(map[string]interface{})
@@ -2324,7 +2344,7 @@ func expandAzureRmVirtualMachineScaleSetPlan(d *schema.ResourceData) *compute.Pl
 		Publisher: &publisher,
 		Name:      &name,
 		Product:   &product,
-	}
+	}, nil
 }
 
 func flattenAzureRmVirtualMachineScaleSetPlan(plan *compute.Plan) []interface{} {

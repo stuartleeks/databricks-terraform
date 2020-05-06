@@ -1,6 +1,7 @@
 package streamanalytics
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"time"
@@ -93,7 +94,7 @@ func resourceArmStreamAnalyticsReferenceInputBlob() *schema.Resource {
 	}
 }
 
-func getBlobReferenceInputProps(d *schema.ResourceData) (streamanalytics.Input, error) {
+func getBlobReferenceInputProps(ctx context.Context, d *schema.ResourceData) (streamanalytics.Input, error) {
 	name := d.Get("name").(string)
 	containerName := d.Get("storage_container_name").(string)
 	dateFormat := d.Get("date_format").(string)
@@ -157,7 +158,7 @@ func resourceArmStreamAnalyticsReferenceInputBlobCreate(d *schema.ResourceData, 
 		}
 	}
 
-	props, err := getBlobReferenceInputProps(d)
+	props, err := getBlobReferenceInputProps(ctx, d)
 	if err != nil {
 		return fmt.Errorf("Error creating the input props for resource creation: %v", err)
 	}
@@ -189,7 +190,7 @@ func resourceArmStreamAnalyticsReferenceInputBlobUpdate(d *schema.ResourceData, 
 	jobName := d.Get("stream_analytics_job_name").(string)
 	resourceGroup := d.Get("resource_group_name").(string)
 
-	props, err := getBlobReferenceInputProps(d)
+	props, err := getBlobReferenceInputProps(ctx, d)
 	if err != nil {
 		return fmt.Errorf("Error creating the input props for resource update: %v", err)
 	}

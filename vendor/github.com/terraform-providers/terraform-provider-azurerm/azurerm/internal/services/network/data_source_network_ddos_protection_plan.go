@@ -51,32 +51,27 @@ func dataSourceNetworkDDoSProtectionPlanRead(d *schema.ResourceData, meta interf
 	name := d.Get("name").(string)
 	resourceGroup := d.Get("resource_group_name").(string)
 
-	resp, err := client.Get(ctx, resourceGroup, name)
+	plan, err := client.Get(ctx, resourceGroup, name)
 	if err != nil {
-		if utils.ResponseWasNotFound(resp.Response) {
-			return fmt.Errorf("DDoS Protection Plan %q (Resource Group %q) was not found", name, resourceGroup)
+		if utils.ResponseWasNotFound(plan.Response) {
+			return fmt.Errorf("Error DDoS Protection Plan %q (Resource Group %q) was not found", name, resourceGroup)
 		}
 
-		return fmt.Errorf("retrieving DDoS Protection Plan %q (Resource Group %q): %+v", name, resourceGroup, err)
+		return fmt.Errorf("Error making Read request on DDoS Protection Plan %q (Resource Group %q): %+v", name, resourceGroup, err)
 	}
 
-	if resp.ID == nil || *resp.ID == "" {
-		return fmt.Errorf("retrieving DDoS Protection Plan %q (Resource Group %q): `id` was nil", name, resourceGroup)
-	}
-	d.SetId(*resp.ID)
-
-	d.Set("name", resp.Name)
+	d.Set("name", plan.Name)
 	d.Set("resource_group_name", resourceGroup)
-	if location := resp.Location; location != nil {
+	if location := plan.Location; location != nil {
 		d.Set("location", azure.NormalizeLocation(*location))
 	}
 
-	if props := resp.DdosProtectionPlanPropertiesFormat; props != nil {
+	if props := plan.DdosProtectionPlanPropertiesFormat; props != nil {
 		vNetIDs := flattenArmNetworkDDoSProtectionPlanVirtualNetworkIDs(props.VirtualNetworks)
 		if err := d.Set("virtual_network_ids", vNetIDs); err != nil {
 			return fmt.Errorf("Error setting `virtual_network_ids`: %+v", err)
 		}
 	}
 
-	return tags.FlattenAndSet(d, resp.Tags)
+	return tags.FlattenAndSet(d, plan.Tags)
 }

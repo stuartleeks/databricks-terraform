@@ -182,7 +182,12 @@ func resourceArmEventHubCreateUpdate(d *schema.ResourceData, meta interface{}) e
 	}
 
 	if _, ok := d.GetOk("capture_description"); ok {
-		parameters.Properties.CaptureDescription = expandEventHubCaptureDescription(d)
+		captureDescription, err := expandEventHubCaptureDescription(d)
+		if err != nil {
+			return fmt.Errorf("Error expanding EventHub Capture Description: %s", err)
+		}
+
+		parameters.Properties.CaptureDescription = captureDescription
 	}
 
 	if _, err := client.CreateOrUpdate(ctx, resourceGroup, namespaceName, name, parameters); err != nil {
@@ -312,7 +317,7 @@ func ValidateEventHubArchiveNameFormat(v interface{}, k string) (warnings []stri
 	return warnings, errors
 }
 
-func expandEventHubCaptureDescription(d *schema.ResourceData) *eventhub.CaptureDescription {
+func expandEventHubCaptureDescription(d *schema.ResourceData) (*eventhub.CaptureDescription, error) {
 	inputs := d.Get("capture_description").([]interface{})
 	input := inputs[0].(map[string]interface{})
 
@@ -351,7 +356,7 @@ func expandEventHubCaptureDescription(d *schema.ResourceData) *eventhub.CaptureD
 		}
 	}
 
-	return &captureDescription
+	return &captureDescription, nil
 }
 
 func flattenEventHubCaptureDescription(description *eventhub.CaptureDescription) []interface{} {

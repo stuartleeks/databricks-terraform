@@ -5,12 +5,13 @@ import (
 	"log"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/services/apimanagement/mgmt/2019-12-01/apimanagement"
+	"github.com/Azure/azure-sdk-for-go/services/apimanagement/mgmt/2018-01-01/apimanagement"
 	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/helper/validation"
 	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/helpers/azure"
 	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/helpers/tf"
 	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/internal/clients"
+	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/internal/features"
 	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/internal/timeouts"
 	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/utils"
 )
@@ -47,9 +48,8 @@ func resourceArmApiManagementDiagnostic() *schema.Resource {
 			"api_management_name": azure.SchemaApiManagementName(),
 
 			"enabled": {
-				Type:       schema.TypeBool,
-				Optional:   true,
-				Deprecated: "this property has been removed from the API and will be removed in version 3.0 of the provider",
+				Type:     schema.TypeBool,
+				Required: true,
 			},
 		},
 	}
@@ -63,12 +63,13 @@ func resourceArmApiManagementDiagnosticCreateUpdate(d *schema.ResourceData, meta
 	diagnosticId := d.Get("identifier").(string)
 	resourceGroup := d.Get("resource_group_name").(string)
 	serviceName := d.Get("api_management_name").(string)
+	enabled := d.Get("enabled").(bool)
 
-	if d.IsNewResource() {
+	if features.ShouldResourcesBeImported() && d.IsNewResource() {
 		existing, err := client.Get(ctx, resourceGroup, serviceName, diagnosticId)
 		if err != nil {
 			if !utils.ResponseWasNotFound(existing.Response) {
-				return fmt.Errorf("checking for presence of existing Diagnostic %q (API Management Service %q / Resource Group %q): %s", diagnosticId, serviceName, resourceGroup, err)
+				return fmt.Errorf("Error checking for presence of existing Diagnostic %q (API Management Service %q / Resource Group %q): %s", diagnosticId, serviceName, resourceGroup, err)
 			}
 		}
 
@@ -78,16 +79,18 @@ func resourceArmApiManagementDiagnosticCreateUpdate(d *schema.ResourceData, meta
 	}
 
 	parameters := apimanagement.DiagnosticContract{
-		DiagnosticContractProperties: &apimanagement.DiagnosticContractProperties{},
+		DiagnosticContractProperties: &apimanagement.DiagnosticContractProperties{
+			Enabled: utils.Bool(enabled),
+		},
 	}
 
 	if _, err := client.CreateOrUpdate(ctx, resourceGroup, serviceName, diagnosticId, parameters, ""); err != nil {
-		return fmt.Errorf("creating or updating Diagnostic %q (Resource Group %q / API Management Service %q): %+v", diagnosticId, resourceGroup, serviceName, err)
+		return fmt.Errorf("Error creating or updating Diagnostic %q (Resource Group %q / API Management Service %q): %+v", diagnosticId, resourceGroup, serviceName, err)
 	}
 
 	resp, err := client.Get(ctx, resourceGroup, serviceName, diagnosticId)
 	if err != nil {
-		return fmt.Errorf("retrieving Diagnostic %q (Resource Group %q / API Management Service %q): %+v", diagnosticId, resourceGroup, serviceName, err)
+		return fmt.Errorf("Error retrieving Diagnostic %q (Resource Group %q / API Management Service %q): %+v", diagnosticId, resourceGroup, serviceName, err)
 	}
 	if resp.ID == nil {
 		return fmt.Errorf("Cannot read ID for Diagnostic %q (Resource Group %q / API Management Service %q)", diagnosticId, resourceGroup, serviceName)
@@ -118,12 +121,16 @@ func resourceArmApiManagementDiagnosticRead(d *schema.ResourceData, meta interfa
 			return nil
 		}
 
-		return fmt.Errorf("making Read request for Diagnostic %q (Resource Group %q / API Management Service %q): %+v", diagnosticId, resourceGroup, serviceName, err)
+		return fmt.Errorf("Error making Read request for Diagnostic %q (Resource Group %q / API Management Service %q): %+v", diagnosticId, resourceGroup, serviceName, err)
 	}
 
 	d.Set("identifier", resp.Name)
 	d.Set("resource_group_name", resourceGroup)
 	d.Set("api_management_name", serviceName)
+
+	if props := resp.DiagnosticContractProperties; props != nil {
+		d.Set("enabled", props.Enabled)
+	}
 
 	return nil
 }
@@ -143,7 +150,7 @@ func resourceArmApiManagementDiagnosticDelete(d *schema.ResourceData, meta inter
 
 	if resp, err := client.Delete(ctx, resourceGroup, serviceName, diagnosticId, ""); err != nil {
 		if !utils.ResponseWasNotFound(resp) {
-			return fmt.Errorf("deleting Diagnostic %q (Resource Group %q / API Management Service %q): %+v", diagnosticId, resourceGroup, serviceName, err)
+			return fmt.Errorf("Error deleting Diagnostic %q (Resource Group %q / API Management Service %q): %+v", diagnosticId, resourceGroup, serviceName, err)
 		}
 	}
 

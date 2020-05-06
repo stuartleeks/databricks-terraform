@@ -7,8 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/services/apimanagement/mgmt/2019-12-01/apimanagement"
-	"github.com/hashicorp/go-azure-helpers/response"
+	"github.com/Azure/azure-sdk-for-go/services/apimanagement/mgmt/2018-01-01/apimanagement"
 	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/helper/validation"
 	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/helpers/azure"
@@ -16,6 +15,7 @@ import (
 	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/helpers/tf"
 	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/helpers/validate"
 	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/internal/clients"
+	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/internal/features"
 	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/internal/tags"
 	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/internal/timeouts"
 	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/utils"
@@ -55,6 +55,14 @@ func resourceArmApiManagementService() *schema.Resource {
 
 			"location": azure.SchemaLocation(),
 
+			"public_ip_addresses": {
+				Type:     schema.TypeList,
+				Computed: true,
+				Elem: &schema.Schema{
+					Type: schema.TypeString,
+				},
+			},
+
 			"publisher_name": {
 				Type:         schema.TypeString,
 				Required:     true,
@@ -71,7 +79,6 @@ func resourceArmApiManagementService() *schema.Resource {
 				Type:     schema.TypeString,
 				Required: true,
 				ValidateFunc: azure.MinCapacitySkuNameInSlice([]string{
-					string(apimanagement.SkuTypeConsumption),
 					string(apimanagement.SkuTypeDeveloper),
 					string(apimanagement.SkuTypeBasic),
 					string(apimanagement.SkuTypeStandard),
@@ -99,34 +106,6 @@ func resourceArmApiManagementService() *schema.Resource {
 						"tenant_id": {
 							Type:     schema.TypeString,
 							Computed: true,
-						},
-					},
-				},
-			},
-
-			"virtual_network_type": {
-				Type:     schema.TypeString,
-				Optional: true,
-				Default:  string(apimanagement.VirtualNetworkTypeNone),
-				ForceNew: true,
-				ValidateFunc: validation.StringInSlice([]string{
-					string(apimanagement.VirtualNetworkTypeNone),
-					string(apimanagement.VirtualNetworkTypeExternal),
-					string(apimanagement.VirtualNetworkTypeInternal),
-				}, false),
-			},
-
-			"virtual_network_configuration": {
-				Type:     schema.TypeList,
-				Optional: true,
-				MaxItems: 1,
-				Elem: &schema.Resource{
-					Schema: map[string]*schema.Schema{
-						"subnet_id": {
-							Type:         schema.TypeString,
-							Required:     true,
-							ForceNew:     true,
-							ValidateFunc: azure.ValidateResourceID,
 						},
 					},
 				},
@@ -373,12 +352,9 @@ func resourceArmApiManagementService() *schema.Resource {
 				},
 			},
 
-			"gateway_url": {
-				Type:     schema.TypeString,
-				Computed: true,
-			},
+			"tags": tags.Schema(),
 
-			"management_api_url": {
+			"gateway_url": {
 				Type:     schema.TypeString,
 				Computed: true,
 			},
@@ -388,23 +364,12 @@ func resourceArmApiManagementService() *schema.Resource {
 				Computed: true,
 			},
 
-			"public_ip_addresses": {
-				Type:     schema.TypeList,
-				Computed: true,
-				Elem: &schema.Schema{
-					Type: schema.TypeString,
-				},
-			},
-
-			"private_ip_addresses": {
-				Type:     schema.TypeList,
-				Computed: true,
-				Elem: &schema.Schema{
-					Type: schema.TypeString,
-				},
-			},
-
 			"portal_url": {
+				Type:     schema.TypeString,
+				Computed: true,
+			},
+
+			"management_api_url": {
 				Type:     schema.TypeString,
 				Computed: true,
 			},
@@ -413,8 +378,6 @@ func resourceArmApiManagementService() *schema.Resource {
 				Type:     schema.TypeString,
 				Computed: true,
 			},
-
-			"tags": tags.Schema(),
 		},
 	}
 }
@@ -431,11 +394,11 @@ func resourceArmApiManagementServiceCreateUpdate(d *schema.ResourceData, meta in
 	name := d.Get("name").(string)
 	resourceGroup := d.Get("resource_group_name").(string)
 
-	if d.IsNewResource() {
+	if features.ShouldResourcesBeImported() && d.IsNewResource() {
 		existing, err := client.Get(ctx, resourceGroup, name)
 		if err != nil {
 			if !utils.ResponseWasNotFound(existing.Response) {
-				return fmt.Errorf("checking for presence of existing API Management Service %q (Resource Group %q): %s", name, resourceGroup, err)
+				return fmt.Errorf("Error checking for presence of existing API Management Service %q (Resource Group %q): %s", name, resourceGroup, err)
 			}
 		}
 
@@ -450,7 +413,6 @@ func resourceArmApiManagementServiceCreateUpdate(d *schema.ResourceData, meta in
 	publisherName := d.Get("publisher_name").(string)
 	publisherEmail := d.Get("publisher_email").(string)
 	notificationSenderEmail := d.Get("notification_sender_email").(string)
-	virtualNetworkType := d.Get("virtual_network_type").(string)
 
 	customProperties := expandApiManagementCustomProperties(d)
 	certificates := expandAzureRmApiManagementCertificates(d)
@@ -481,30 +443,18 @@ func resourceArmApiManagementServiceCreateUpdate(d *schema.ResourceData, meta in
 		properties.ServiceProperties.NotificationSenderEmail = &notificationSenderEmail
 	}
 
-	if virtualNetworkType != "" {
-		properties.ServiceProperties.VirtualNetworkType = apimanagement.VirtualNetworkType(virtualNetworkType)
-
-		if virtualNetworkType != string(apimanagement.VirtualNetworkTypeNone) {
-			virtualNetworkConfiguration := expandAzureRmApiManagementVirtualNetworkConfigurations(d)
-			if virtualNetworkConfiguration == nil {
-				return fmt.Errorf("You must specify 'virtual_network_configuration' when 'virtual_network_type' is %q", virtualNetworkType)
-			}
-			properties.ServiceProperties.VirtualNetworkConfiguration = virtualNetworkConfiguration
-		}
-	}
-
 	future, err := client.CreateOrUpdate(ctx, resourceGroup, name, properties)
 	if err != nil {
-		return fmt.Errorf("creating/updating API Management Service %q (Resource Group %q): %+v", name, resourceGroup, err)
+		return fmt.Errorf("Error creating/updating API Management Service %q (Resource Group %q): %+v", name, resourceGroup, err)
 	}
 
 	if err = future.WaitForCompletionRef(ctx, client.Client); err != nil {
-		return fmt.Errorf("waiting for creation/update of API Management Service %q (Resource Group %q): %+v", name, resourceGroup, err)
+		return fmt.Errorf("Error waiting for creation/update of API Management Service %q (Resource Group %q): %+v", name, resourceGroup, err)
 	}
 
 	read, err := client.Get(ctx, resourceGroup, name)
 	if err != nil {
-		return fmt.Errorf("retrieving API Management Service %q (Resource Group %q): %+v", name, resourceGroup, err)
+		return fmt.Errorf("Error retrieving API Management Service %q (Resource Group %q): %+v", name, resourceGroup, err)
 	}
 
 	if read.ID == nil {
@@ -516,15 +466,15 @@ func resourceArmApiManagementServiceCreateUpdate(d *schema.ResourceData, meta in
 	signInSettingsRaw := d.Get("sign_in").([]interface{})
 	signInSettings := expandApiManagementSignInSettings(signInSettingsRaw)
 	signInClient := meta.(*clients.Client).ApiManagement.SignInClient
-	if _, err := signInClient.CreateOrUpdate(ctx, resourceGroup, name, signInSettings, ""); err != nil {
-		return fmt.Errorf(" setting Sign In settings for API Management Service %q (Resource Group %q): %+v", name, resourceGroup, err)
+	if _, err := signInClient.CreateOrUpdate(ctx, resourceGroup, name, signInSettings); err != nil {
+		return fmt.Errorf("Error setting Sign In settings for API Management Service %q (Resource Group %q): %+v", name, resourceGroup, err)
 	}
 
 	signUpSettingsRaw := d.Get("sign_up").([]interface{})
 	signUpSettings := expandApiManagementSignUpSettings(signUpSettingsRaw)
 	signUpClient := meta.(*clients.Client).ApiManagement.SignUpClient
-	if _, err := signUpClient.CreateOrUpdate(ctx, resourceGroup, name, signUpSettings, ""); err != nil {
-		return fmt.Errorf(" setting Sign Up settings for API Management Service %q (Resource Group %q): %+v", name, resourceGroup, err)
+	if _, err := signUpClient.CreateOrUpdate(ctx, resourceGroup, name, signUpSettings); err != nil {
+		return fmt.Errorf("Error setting Sign Up settings for API Management Service %q (Resource Group %q): %+v", name, resourceGroup, err)
 	}
 
 	policyClient := meta.(*clients.Client).ApiManagement.PolicyClient
@@ -538,14 +488,14 @@ func resourceArmApiManagementServiceCreateUpdate(d *schema.ResourceData, meta in
 		// remove the existing policy
 		if resp, err := policyClient.Delete(ctx, resourceGroup, name, ""); err != nil {
 			if !utils.ResponseWasNotFound(resp) {
-				return fmt.Errorf("removing Policies from API Management Service %q (Resource Group %q): %+v", name, resourceGroup, err)
+				return fmt.Errorf("Error removing Policies from API Management Service %q (Resource Group %q): %+v", name, resourceGroup, err)
 			}
 		}
 
 		// then add the new one, if it exists
 		if policy != nil {
-			if _, err := policyClient.CreateOrUpdate(ctx, resourceGroup, name, *policy, ""); err != nil {
-				return fmt.Errorf(" setting Policies for API Management Service %q (Resource Group %q): %+v", name, resourceGroup, err)
+			if _, err := policyClient.CreateOrUpdate(ctx, resourceGroup, name, *policy); err != nil {
+				return fmt.Errorf("Error setting Policies for API Management Service %q (Resource Group %q): %+v", name, resourceGroup, err)
 			}
 		}
 	}
@@ -574,26 +524,26 @@ func resourceArmApiManagementServiceRead(d *schema.ResourceData, meta interface{
 			return nil
 		}
 
-		return fmt.Errorf("making Read request on API Management Service %q (Resource Group %q): %+v", name, resourceGroup, err)
+		return fmt.Errorf("Error making Read request on API Management Service %q (Resource Group %q): %+v", name, resourceGroup, err)
 	}
 
 	signInClient := meta.(*clients.Client).ApiManagement.SignInClient
 	signInSettings, err := signInClient.Get(ctx, resourceGroup, name)
 	if err != nil {
-		return fmt.Errorf("retrieving Sign In Settings for API Management Service %q (Resource Group %q): %+v", name, resourceGroup, err)
+		return fmt.Errorf("Error retrieving Sign In Settings for API Management Service %q (Resource Group %q): %+v", name, resourceGroup, err)
 	}
 
 	signUpClient := meta.(*clients.Client).ApiManagement.SignUpClient
 	signUpSettings, err := signUpClient.Get(ctx, resourceGroup, name)
 	if err != nil {
-		return fmt.Errorf("retrieving Sign Up Settings for API Management Service %q (Resource Group %q): %+v", name, resourceGroup, err)
+		return fmt.Errorf("Error retrieving Sign Up Settings for API Management Service %q (Resource Group %q): %+v", name, resourceGroup, err)
 	}
 
 	policyClient := meta.(*clients.Client).ApiManagement.PolicyClient
-	policy, err := policyClient.Get(ctx, resourceGroup, name, apimanagement.PolicyExportFormatXML)
+	policy, err := policyClient.Get(ctx, resourceGroup, name)
 	if err != nil {
 		if !utils.ResponseWasNotFound(policy.Response) {
-			return fmt.Errorf("retrieving Policy for API Management Service %q (Resource Group %q): %+v", name, resourceGroup, err)
+			return fmt.Errorf("Error retrieving Policy for API Management Service %q (Resource Group %q): %+v", name, resourceGroup, err)
 		}
 	}
 
@@ -606,7 +556,7 @@ func resourceArmApiManagementServiceRead(d *schema.ResourceData, meta interface{
 
 	identity := flattenAzureRmApiManagementMachineIdentity(resp.Identity)
 	if err := d.Set("identity", identity); err != nil {
-		return fmt.Errorf("setting `identity`: %+v", err)
+		return fmt.Errorf("Error setting `identity`: %+v", err)
 	}
 
 	if props := resp.ServiceProperties; props != nil {
@@ -619,45 +569,39 @@ func resourceArmApiManagementServiceRead(d *schema.ResourceData, meta interface{
 		d.Set("management_api_url", props.ManagementAPIURL)
 		d.Set("scm_url", props.ScmURL)
 		d.Set("public_ip_addresses", props.PublicIPAddresses)
-		d.Set("private_ip_addresses", props.PrivateIPAddresses)
-		d.Set("virtual_network_type", props.VirtualNetworkType)
 
 		if err := d.Set("security", flattenApiManagementSecurityCustomProperties(props.CustomProperties)); err != nil {
-			return fmt.Errorf("setting `security`: %+v", err)
+			return fmt.Errorf("Error setting `security`: %+v", err)
 		}
 
 		if err := d.Set("protocols", flattenApiManagementProtocolsCustomProperties(props.CustomProperties)); err != nil {
-			return fmt.Errorf("setting `protocols`: %+v", err)
+			return fmt.Errorf("Error setting `protocols`: %+v", err)
 		}
 
 		hostnameConfigs := flattenApiManagementHostnameConfigurations(props.HostnameConfigurations, d)
 		if err := d.Set("hostname_configuration", hostnameConfigs); err != nil {
-			return fmt.Errorf("setting `hostname_configuration`: %+v", err)
+			return fmt.Errorf("Error setting `hostname_configuration`: %+v", err)
 		}
 
 		if err := d.Set("additional_location", flattenApiManagementAdditionalLocations(props.AdditionalLocations)); err != nil {
-			return fmt.Errorf("setting `additional_location`: %+v", err)
-		}
-
-		if err := d.Set("virtual_network_configuration", flattenApiManagementVirtualNetworkConfiguration(props.VirtualNetworkConfiguration)); err != nil {
-			return fmt.Errorf("setting `virtual_network_configuration`: %+v", err)
+			return fmt.Errorf("Error setting `additional_location`: %+v", err)
 		}
 	}
 
 	if err := d.Set("sku_name", flattenApiManagementServiceSkuName(resp.Sku)); err != nil {
-		return fmt.Errorf("setting `sku_name`: %+v", err)
+		return fmt.Errorf("Error setting `sku_name`: %+v", err)
 	}
 
 	if err := d.Set("sign_in", flattenApiManagementSignInSettings(signInSettings)); err != nil {
-		return fmt.Errorf("setting `sign_in`: %+v", err)
+		return fmt.Errorf("Error setting `sign_in`: %+v", err)
 	}
 
 	if err := d.Set("sign_up", flattenApiManagementSignUpSettings(signUpSettings)); err != nil {
-		return fmt.Errorf("setting `sign_up`: %+v", err)
+		return fmt.Errorf("Error setting `sign_up`: %+v", err)
 	}
 
 	if err := d.Set("policy", flattenApiManagementPolicies(d, policy)); err != nil {
-		return fmt.Errorf("setting `policy`: %+v", err)
+		return fmt.Errorf("Error setting `policy`: %+v", err)
 	}
 
 	return tags.FlattenAndSet(d, resp.Tags)
@@ -676,14 +620,10 @@ func resourceArmApiManagementServiceDelete(d *schema.ResourceData, meta interfac
 	name := id.Path["service"]
 
 	log.Printf("[DEBUG] Deleting API Management Service %q (Resource Grouo %q)", name, resourceGroup)
-	future, err := client.Delete(ctx, resourceGroup, name)
+	resp, err := client.Delete(ctx, resourceGroup, name)
 	if err != nil {
-		return fmt.Errorf("deleting API Management Service %q (Resource Group %q): %+v", name, resourceGroup, err)
-	}
-
-	if err = future.WaitForCompletionRef(ctx, client.Client); err != nil {
-		if !response.WasNotFound(future.Response()) {
-			return fmt.Errorf("waiting for deletion of API Management Service %q (Resource Group %q): %+v", name, resourceGroup, err)
+		if !utils.ResponseWasNotFound(resp) {
+			return fmt.Errorf("Error deleting API Management Service %q (Resource Group %q): %+v", name, resourceGroup, err)
 		}
 	}
 
@@ -700,21 +640,21 @@ func expandAzureRmApiManagementHostnameConfigurations(d *schema.ResourceData) *[
 		managementVs := hostnameV["management"].([]interface{})
 		for _, managementV := range managementVs {
 			v := managementV.(map[string]interface{})
-			output := expandApiManagementCommonHostnameConfiguration(v, apimanagement.HostnameTypeManagement)
+			output := expandApiManagementCommonHostnameConfiguration(v, apimanagement.Management)
 			results = append(results, output)
 		}
 
 		portalVs := hostnameV["portal"].([]interface{})
 		for _, portalV := range portalVs {
 			v := portalV.(map[string]interface{})
-			output := expandApiManagementCommonHostnameConfiguration(v, apimanagement.HostnameTypePortal)
+			output := expandApiManagementCommonHostnameConfiguration(v, apimanagement.Portal)
 			results = append(results, output)
 		}
 
 		proxyVs := hostnameV["proxy"].([]interface{})
 		for _, proxyV := range proxyVs {
 			v := proxyV.(map[string]interface{})
-			output := expandApiManagementCommonHostnameConfiguration(v, apimanagement.HostnameTypeProxy)
+			output := expandApiManagementCommonHostnameConfiguration(v, apimanagement.Proxy)
 			if value, ok := v["default_ssl_binding"]; ok {
 				output.DefaultSslBinding = utils.Bool(value.(bool))
 			}
@@ -724,7 +664,7 @@ func expandAzureRmApiManagementHostnameConfigurations(d *schema.ResourceData) *[
 		scmVs := hostnameV["scm"].([]interface{})
 		for _, scmV := range scmVs {
 			v := scmV.(map[string]interface{})
-			output := expandApiManagementCommonHostnameConfiguration(v, apimanagement.HostnameTypeScm)
+			output := expandApiManagementCommonHostnameConfiguration(v, apimanagement.Scm)
 			results = append(results, output)
 		}
 	}
@@ -800,20 +740,20 @@ func flattenApiManagementHostnameConfigurations(input *[]apimanagement.HostnameC
 		}
 
 		switch strings.ToLower(string(config.Type)) {
-		case strings.ToLower(string(apimanagement.HostnameTypeProxy)):
+		case strings.ToLower(string(apimanagement.Proxy)):
 			// only set SSL binding for proxy types
 			if config.DefaultSslBinding != nil {
 				output["default_ssl_binding"] = *config.DefaultSslBinding
 			}
 			proxyResults = append(proxyResults, output)
 
-		case strings.ToLower(string(apimanagement.HostnameTypeManagement)):
+		case strings.ToLower(string(apimanagement.Management)):
 			managementResults = append(managementResults, output)
 
-		case strings.ToLower(string(apimanagement.HostnameTypePortal)):
+		case strings.ToLower(string(apimanagement.Portal)):
 			portalResults = append(portalResults, output)
 
-		case strings.ToLower(string(apimanagement.HostnameTypeScm)):
+		case strings.ToLower(string(apimanagement.Scm)):
 			scmResults = append(scmResults, output)
 		}
 	}
@@ -908,7 +848,7 @@ func expandAzureRmApiManagementIdentity(d *schema.ResourceData) *apimanagement.S
 	v := vs[0].(map[string]interface{})
 	identityType := v["type"].(string)
 	return &apimanagement.ServiceIdentity{
-		Type: apimanagement.ApimIdentityType(identityType),
+		Type: utils.String(identityType),
 	}
 }
 
@@ -919,7 +859,9 @@ func flattenAzureRmApiManagementMachineIdentity(identity *apimanagement.ServiceI
 
 	result := make(map[string]interface{})
 
-	result["type"] = string(identity.Type)
+	if identity.Type != nil {
+		result["type"] = *identity.Type
+	}
 
 	if identity.PrincipalID != nil {
 		result["principal_id"] = identity.PrincipalID.String()
@@ -988,27 +930,13 @@ func expandApiManagementCustomProperties(d *schema.ResourceData) map[string]*str
 		apimTripleDesCiphers:      utils.String(strconv.FormatBool(tripleDesCiphers)),
 	}
 
-	if vp := d.Get("protocols").([]interface{}); len(vp) > 0 {
+	if vp := d.Get("protocols").(([]interface{})); len(vp) > 0 {
 		if p, ok := d.GetOkExists("protocols.0.enable_http2"); ok {
 			customProperties[apimHttp2Protocol] = utils.String(strconv.FormatBool(p.(bool)))
 		}
 	}
 
 	return customProperties
-}
-
-func expandAzureRmApiManagementVirtualNetworkConfigurations(d *schema.ResourceData) *apimanagement.VirtualNetworkConfiguration {
-	vs := d.Get("virtual_network_configuration").([]interface{})
-	if len(vs) == 0 {
-		return nil
-	}
-
-	v := vs[0].(map[string]interface{})
-	subnetResourceId := v["subnet_id"].(string)
-
-	return &apimanagement.VirtualNetworkConfiguration{
-		SubnetResourceID: &subnetResourceId,
-	}
 }
 
 func flattenApiManagementSecurityCustomProperties(input map[string]*string) []interface{} {
@@ -1031,20 +959,6 @@ func flattenApiManagementProtocolsCustomProperties(input map[string]*string) []i
 	output["enable_http2"] = parseApiManagementNilableDictionary(input, apimHttp2Protocol)
 
 	return []interface{}{output}
-}
-
-func flattenApiManagementVirtualNetworkConfiguration(input *apimanagement.VirtualNetworkConfiguration) []interface{} {
-	if input == nil {
-		return []interface{}{}
-	}
-
-	virtualNetworkConfiguration := make(map[string]interface{})
-
-	if input.SubnetResourceID != nil {
-		virtualNetworkConfiguration["subnet_id"] = *input.SubnetResourceID
-	}
-
-	return []interface{}{virtualNetworkConfiguration}
 }
 
 func apiManagementResourceHostnameSchema(schemaName string) map[string]*schema.Schema {
@@ -1116,7 +1030,7 @@ func parseApiManagementNilableDictionary(input map[string]*string, key string) b
 
 	val, err := strconv.ParseBool(*v)
 	if err != nil {
-		log.Printf(" parsing %q (key %q) as bool: %+v - assuming false", key, *v, err)
+		log.Printf("Error parsing %q (key %q) as bool: %+v - assuming false", key, *v, err)
 		return false
 	}
 
@@ -1237,8 +1151,8 @@ func expandApiManagementPolicies(input []interface{}) (*apimanagement.PolicyCont
 	if xmlContent != "" {
 		return &apimanagement.PolicyContract{
 			PolicyContractProperties: &apimanagement.PolicyContractProperties{
-				Format: apimanagement.XML,
-				Value:  utils.String(xmlContent),
+				ContentFormat: apimanagement.XML,
+				PolicyContent: utils.String(xmlContent),
 			},
 		}, nil
 	}
@@ -1246,8 +1160,8 @@ func expandApiManagementPolicies(input []interface{}) (*apimanagement.PolicyCont
 	if xmlLink != "" {
 		return &apimanagement.PolicyContract{
 			PolicyContractProperties: &apimanagement.PolicyContractProperties{
-				Format: apimanagement.XMLLink,
-				Value:  utils.String(xmlLink),
+				ContentFormat: apimanagement.XMLLink,
+				PolicyContent: utils.String(xmlLink),
 			},
 		}, nil
 	}
@@ -1258,8 +1172,8 @@ func expandApiManagementPolicies(input []interface{}) (*apimanagement.PolicyCont
 func flattenApiManagementPolicies(d *schema.ResourceData, input apimanagement.PolicyContract) []interface{} {
 	xmlContent := ""
 	if props := input.PolicyContractProperties; props != nil {
-		if props.Value != nil {
-			xmlContent = *props.Value
+		if props.PolicyContent != nil {
+			xmlContent = *props.PolicyContent
 		}
 	}
 

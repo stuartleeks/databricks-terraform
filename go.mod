@@ -3,10 +3,10 @@ module github.com/databrickslabs/databricks-terraform
 go 1.13
 
 require (
-	github.com/Azure/azure-sdk-for-go v41.2.0+incompatible // indirect
-	github.com/betacraft/easytags v1.0.2 // indirect
 	github.com/google/go-querystring v1.0.0
-	github.com/hashicorp/terraform v0.12.24 // indirect
+	github.com/hashicorp/go-getter v1.4.2-0.20200106182914-9813cbd4eb02 // indirect
+	github.com/hashicorp/hcl/v2 v2.3.0 // indirect
+	github.com/hashicorp/terraform-config-inspect v0.0.0-20191212124732-c6ae6269b9d7 // indirect
 	github.com/hashicorp/terraform-plugin-sdk v1.11.0
 	github.com/joho/godotenv v1.3.0
 	github.com/r3labs/diff v0.0.0-20191120142937-b4ed99a31f5a

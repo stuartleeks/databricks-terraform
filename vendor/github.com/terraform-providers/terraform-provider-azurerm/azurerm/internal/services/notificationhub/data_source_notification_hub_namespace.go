@@ -8,7 +8,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
 	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/helpers/azure"
 	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/internal/clients"
-	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/internal/tags"
 	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/internal/timeouts"
 	"github.com/terraform-providers/terraform-provider-azurerm/azurerm/utils"
 )
@@ -54,7 +53,9 @@ func dataSourceNotificationHubNamespace() *schema.Resource {
 				Computed: true,
 			},
 
-			"tags": tags.SchemaDataSource(),
+			// NOTE: skipping tags as there's a bug in the API where the Keys for Tags are returned in lower-case
+			// Azure Rest API Specs issue: https://github.com/Azure/azure-sdk-for-go/issues/2239
+			// "tags": tags.SchemaDataSource(),
 
 			"servicebus_endpoint": {
 				Type:     schema.TypeString,
@@ -100,7 +101,7 @@ func resourceArmDataSourceNotificationHubNamespaceRead(d *schema.ResourceData, m
 		d.Set("servicebus_endpoint", props.ServiceBusEndpoint)
 	}
 
-	return tags.FlattenAndSet(d, resp.Tags)
+	return nil
 }
 
 func flattenNotificationHubDataSourceNamespacesSku(input *notificationhubs.Sku) []interface{} {
