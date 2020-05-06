@@ -5,6 +5,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/terraform"
 	"github.com/joho/godotenv"
 	azurerm "github.com/terraform-providers/terraform-provider-azurerm/azurerm"
+	azuread "github.com/terraform-providers/terraform-provider-azuread/azuread"
 	"log"
 	"os"
 	"testing"
@@ -18,6 +19,7 @@ func init() {
 	testAccProviders = map[string]terraform.ResourceProvider{
 		"databricks": testAccProvider,
 		"azurerm": azurerm.Provider(),
+		"azuread": azuread.Provider(),
 	}
 }
 
