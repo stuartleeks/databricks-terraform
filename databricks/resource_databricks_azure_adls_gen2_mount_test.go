@@ -17,6 +17,7 @@ func TestAccAzureAdlsGen2Mount_capture_error(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		PreCheck:  func() { azurePreCheck(t) },
 		Providers: testAccProviders,
+		ProviderFactories: map[string]terraform.ResourceProviderFactory,
 		// CheckDestroy: testAccCheckShellScriptDestroy,
 		Steps: []resource.TestStep{
 			{
@@ -34,6 +35,15 @@ func testAccAzureAdlsGen2Mount_capture_error(randPrefix string, randSpPassword s
 	tenantID := os.Getenv("ARM_TENANT_ID")
 	subscriptionID := os.Getenv("ARM_SUBSCRIPTION_ID")
 	definition := fmt.Sprintf(`
+	provider "azurerm" {
+	  version = "~> 2.3"
+	  features {}
+	}
+
+	provider "azuread" {
+	  version = "~> 0.8"
+	}
+
 	resource "azurerm_resource_group" "example" {
 	  name     = "%[1]srg"
 	  location = "eastus" # note must be lower without spaces not verbose style
