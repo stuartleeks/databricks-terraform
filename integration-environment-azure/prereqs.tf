@@ -3,11 +3,6 @@ provider "azurerm" {
   features {}
 }
 
-provider "azuread" {
-  version = "~> 0.8"
-
-}
-
 provider "random" {
   version = "~> 2.2"
 }
@@ -24,10 +19,11 @@ resource "azurerm_resource_group" "example" {
 }
 
 resource "azurerm_databricks_workspace" "example" {
-  name                = "workspace${random_string.naming.result}"
-  resource_group_name = azurerm_resource_group.example.name
-  location            = azurerm_resource_group.example.location
-  sku                 = "standard"
+  name                        = "workspace${random_string.naming.result}"
+  resource_group_name         = azurerm_resource_group.example.name
+  location                    = azurerm_resource_group.example.location
+  sku                         = "standard"
+  managed_resource_group_name = "workspace${random_string.naming.result}"
 }
 
 resource "azurerm_storage_account" "account" {
@@ -40,10 +36,22 @@ resource "azurerm_storage_account" "account" {
   is_hns_enabled           = "true"
 }
 
-output "workspace" {
-  value = azurerm_databricks_workspace.example
+output "workspace_managed_rg_name" {
+  value = "workspace${random_string.naming.result}"
 }
 
-output "datalake" {
-  value = azurerm_storage_account.account
+output "workspace_name" {
+  value = azurerm_databricks_workspace.example.name
+}
+
+output "gen2_adal_name" {
+  value = azurerm_storage_account.account.name
+}
+
+output "location" {
+  value = azurerm_storage_account.account.location
+}
+
+output "rg_name" {
+  value = azurerm_resource_group.example.name
 }

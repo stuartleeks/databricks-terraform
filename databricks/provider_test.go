@@ -30,20 +30,3 @@ func TestMain(m *testing.M) {
 	code := m.Run()
 	os.Exit(code)
 }
-
-func azurePreCheck(t *testing.T) {
-	variables := []string{
-		"ARM_CLIENT_ID",
-		"ARM_CLIENT_SECRET",
-		"ARM_SUBSCRIPTION_ID",
-		"ARM_TENANT_ID",
-		"ARM_TEST_LOCATION",
-	}
-
-	for _, variable := range variables {
-		value := os.Getenv(variable)
-		if value == "" {
-			t.Fatalf("`%s` must be set for Azure acceptance tests!", variable)
-		}
-	}
-}
