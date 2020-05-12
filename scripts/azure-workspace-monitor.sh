@@ -6,12 +6,12 @@ set -e
 # 1. Install Az CLI
 # 2. Add databricks addin `az extension add --name databricks`
 
-RG=inttestworkspace4
+RG=inttestworkspace7
 LOCATION=eastus
 
 az group create --name $RG --location $LOCATION
 
-for i in {1..5}
+for i in {1..3}
 do
     # Create 10 workspaces in parrallel
     az databricks workspace create --resource-group $RG --name inttest$RANDOM --location $LOCATION --sku standard --no-wait &
@@ -34,22 +34,38 @@ while true
 do
     for wsid in `az databricks workspace list -g $RG --query "[].id" -o tsv`
     do 
-        LOGNAME=`echo $wsid | base64`.log
-        echo -e "\n`date` \n" | tee -a $LOGNAME
-
-        echo "Fetching clusters/list-node-types" | tee -a $LOGNAME
+        LOGNAME="`echo $wsid | base64`.log"
+        echo -e "\nIteration:`date`" | tee -a $LOGNAME
+        echo "clusters/list-node-types" | tee -a $LOGNAME
         curl https://$LOCATION.azuredatabricks.net/api/2.0/clusters/list-node-types \
             -H "Authorization: Bearer $token" \
             -H "X-Databricks-Azure-SP-Management-Token:$azToken" \
             -H "X-Databricks-Azure-Workspace-Resource-Id:$wsid" | tee -a $LOGNAME
         
-        echo -e "\n`date` \n" | tee -a $LOGNAME
-
-        echo "Fetching clusters/list" | tee -a $LOGNAME
+        echo -e "`date`" | tee -a $LOGNAME
+        echo "clusters/list" | tee -a $LOGNAME
         curl https://$LOCATION.azuredatabricks.net/api/2.0/clusters/list \
             -H "Authorization: Bearer $token" \
             -H "X-Databricks-Azure-SP-Management-Token:$azToken" \
             -H "X-Databricks-Azure-Workspace-Resource-Id:$wsid" | tee -a $LOGNAME
+
+        echo -e "`date`" | tee -a $LOGNAME
+        echo "clusters/create" | tee -a $LOGNAME
+        curl https://$LOCATION.azuredatabricks.net/api/2.0/clusters/create \
+            -H "Authorization: Bearer $token" \
+            -H "X-Databricks-Azure-SP-Management-Token:$azToken" \
+            -H "X-Databricks-Azure-Workspace-Resource-Id:$wsid" \
+            -H 'Content-Type: application/json' \
+            -X POST \
+            -d '{
+  "cluster_name": "high-concurrency-cluster",
+  "spark_version": "6.4.x-scala2.11",
+  "node_type_id": "Standard_DS3_v2",
+  "autotermination_minutes":10,
+  "start_cluster": false,
+  "num_workers": 0
+}'| tee -a $LOGNAME
+
     done
     sleep 1
 done
