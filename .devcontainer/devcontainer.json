@@ -20,6 +20,8 @@
 		"-v", "databricks-terraform-bashhistory:/root/commandhistory",
 		// Mount docker socket for docker builds
 		"-v", "/var/run/docker.sock:/var/run/docker.sock",
+		// Mount azure cli config
+		"-v", "${env:HOME}${env:USERPROFILE}/.azure:/root/.azure",
 		// Use host network
 		"--network=host",
 	],
