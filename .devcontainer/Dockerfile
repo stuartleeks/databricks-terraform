@@ -4,7 +4,7 @@ ARG TERRAFORM_VERSION=0.12.19
 
 # Configure apt, install packages and tools
 RUN apt-get update \
-    && apt-get -y install --no-install-recommends apt-utils bash-completion icu-devtools \
+    && apt-get -y install --no-install-recommends apt-utils bash-completion icu-devtools jq \
     #
     # Verify git, process tools, lsb-release (common in install instructions for CLIs) installed
     && apt-get -y install git iproute2 procps lsb-release unzip\
@@ -44,3 +44,11 @@ RUN \
     && go get github.com/acroca/go-symbols@v0.1.1 && go get github.com/ramya-rao-a/go-outline@7182a932836a71948db4a81991a494751eccfe77 \
     # --> GolangCI-lint
     && curl -sfL https://install.goreleaser.com/github.com/golangci/golangci-lint.sh | sed 's/tar -/tar --no-same-owner -/g' | sh -s -- -b $(go env GOPATH)/bin \
+
+# Install azcli 
+RUN curl -sL https://aka.ms/InstallAzureCLIDeb | bash 
+# Install databricks az cli extension
+RUN az extension add --name databricks
+# Install databricks cli
+RUN apt install -y python3 python3-dev python3-pip python3-setuptools python3-wheel
+RUN pip3 install databricks-cli==0.9.1
