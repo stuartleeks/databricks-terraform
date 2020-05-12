@@ -6,7 +6,7 @@ set -e
 # 1. Install Az CLI
 # 2. Add databricks addin `az extension add --name databricks`
 
-RG=inttestworkspace7
+RG=inttestworkspace8
 LOCATION=eastus
 
 az group create --name $RG --location $LOCATION
@@ -34,24 +34,31 @@ while true
 do
     for wsid in `az databricks workspace list -g $RG --query "[].id" -o tsv`
     do 
+        # Create a unique log file name from the id
         LOGNAME="`echo $wsid | base64`.log"
-        echo -e "\nIteration:`date`" | tee -a $LOGNAME
+        # Get workspace provisioning status
+        status=`az resource show --id $wsid --query properties.provisioningState -o tsv`
+        echo -e "\nIteration:`date` workspaceStatus: $status" | tee -a $LOGNAME
+
+        # Get the workspace url
+        workspaceURL=`az resource show --id $wsid --query properties.workspaceUrl -o tsv`
+        # Disabled use for comparison using location based url
+        #$workspaceURL = "$LOCATION.azuredatabricks.net"
+
         echo "clusters/list-node-types" | tee -a $LOGNAME
-        curl https://$LOCATION.azuredatabricks.net/api/2.0/clusters/list-node-types \
+        curl https://$workspaceURL/api/2.0/clusters/list-node-types \
             -H "Authorization: Bearer $token" \
             -H "X-Databricks-Azure-SP-Management-Token:$azToken" \
             -H "X-Databricks-Azure-Workspace-Resource-Id:$wsid" | tee -a $LOGNAME
         
-        echo -e "`date`" | tee -a $LOGNAME
         echo "clusters/list" | tee -a $LOGNAME
-        curl https://$LOCATION.azuredatabricks.net/api/2.0/clusters/list \
+        curl https://$workspaceURL/api/2.0/clusters/list \
             -H "Authorization: Bearer $token" \
             -H "X-Databricks-Azure-SP-Management-Token:$azToken" \
             -H "X-Databricks-Azure-Workspace-Resource-Id:$wsid" | tee -a $LOGNAME
 
-        echo -e "`date`" | tee -a $LOGNAME
         echo "clusters/create" | tee -a $LOGNAME
-        curl https://$LOCATION.azuredatabricks.net/api/2.0/clusters/create \
+        curl https://$workspaceURL/api/2.0/clusters/create \
             -H "Authorization: Bearer $token" \
             -H "X-Databricks-Azure-SP-Management-Token:$azToken" \
             -H "X-Databricks-Azure-Workspace-Resource-Id:$wsid" \
