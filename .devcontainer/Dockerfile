@@ -50,5 +50,11 @@ RUN curl -sL https://aka.ms/InstallAzureCLIDeb | bash
 # Install databricks az cli extension
 RUN az extension add --name databricks
 # Install databricks cli
-RUN apt install -y python3 python3-dev python3-pip python3-setuptools python3-wheel
+RUN apt-get update \
+    && apt-get install -y python3 python3-dev python3-pip python3-setuptools python3-wheel \
+       #
+    # Clean up
+    && apt-get autoremove -y \
+    && apt-get clean -y \
+    && rm -rf /var/lib/apt/lists/*
 RUN pip3 install databricks-cli==0.9.1
