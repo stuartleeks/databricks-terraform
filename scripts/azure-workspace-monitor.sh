@@ -6,7 +6,7 @@ set -e
 # 1. Install Az CLI
 # 2. Add databricks addin `az extension add --name databricks`
 
-RG=inttestworkspace8
+RG=inttestworkspace10
 LOCATION=eastus
 
 az group create --name $RG --location $LOCATION
@@ -46,19 +46,13 @@ do
         #$workspaceURL = "$LOCATION.azuredatabricks.net"
 
         echo "clusters/list-node-types" | tee -a $LOGNAME
-        curl https://$workspaceURL/api/2.0/clusters/list-node-types \
+        curl -i https://$workspaceURL/api/2.0/clusters/list-node-types \
             -H "Authorization: Bearer $token" \
             -H "X-Databricks-Azure-SP-Management-Token:$azToken" \
             -H "X-Databricks-Azure-Workspace-Resource-Id:$wsid" | tee -a $LOGNAME
         
-        echo "clusters/list" | tee -a $LOGNAME
-        curl https://$workspaceURL/api/2.0/clusters/list \
-            -H "Authorization: Bearer $token" \
-            -H "X-Databricks-Azure-SP-Management-Token:$azToken" \
-            -H "X-Databricks-Azure-Workspace-Resource-Id:$wsid" | tee -a $LOGNAME
-
         echo "clusters/create" | tee -a $LOGNAME
-        curl https://$workspaceURL/api/2.0/clusters/create \
+        curl -i https://$workspaceURL/api/2.0/clusters/create \
             -H "Authorization: Bearer $token" \
             -H "X-Databricks-Azure-SP-Management-Token:$azToken" \
             -H "X-Databricks-Azure-Workspace-Resource-Id:$wsid" \
