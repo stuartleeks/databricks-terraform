@@ -40,7 +40,12 @@ func resourceAzureAdlsGen2Mount() *schema.Resource {
 				Required: true,
 				ForceNew: true,
 			},
-			"tenant_id": {
+			"use_aad_passthrough": {
+				Type:     schema.TypeBool,
+				Optional: true,
+				Default:  true,
+			},
+			"tenant_id": { //ToDo: LK discuss with SL how to tackle "Required: true" on the following attributes
 				Type:     schema.TypeString,
 				Required: true,
 				ForceNew: true,
@@ -80,13 +85,14 @@ func resourceAzureAdlsGen2Create(d *schema.ResourceData, m interface{}) error {
 	storageAccountName := d.Get("storage_account_name").(string)
 	directory := d.Get("directory").(string)
 	mountName := d.Get("mount_name").(string)
+	useAADPassthrough := d.Get("use_aad_passthrough").(bool)
 	tenantID := d.Get("tenant_id").(string)
 	clientID := d.Get("client_id").(string)
 	clientSecretScope := d.Get("client_secret_scope").(string)
 	clientSecretKey := d.Get("client_secret_key").(string)
 	initializeFileSystem := d.Get("initialize_file_system").(bool)
 
-	adlsGen2Mount := NewAzureADLSGen2Mount(containerName, storageAccountName, directory, mountName, clientID, tenantID,
+	adlsGen2Mount := NewAzureADLSGen2Mount(containerName, storageAccountName, directory, mountName, useAADPassthrough, clientID, tenantID,
 		clientSecretScope, clientSecretKey, initializeFileSystem)
 
 	err = adlsGen2Mount.Create(client, clusterID)
@@ -137,13 +143,14 @@ func resourceAzureAdlsGen2Read(d *schema.ResourceData, m interface{}) error {
 	storageAccountName := d.Get("storage_account_name").(string)
 	directory := d.Get("directory").(string)
 	mountName := d.Get("mount_name").(string)
+	useAADPassthrough := d.Get("use_aad_passthrough").(bool)
 	tenantID := d.Get("tenant_id").(string)
 	clientID := d.Get("client_id").(string)
 	clientSecretScope := d.Get("client_secret_scope").(string)
 	clientSecretKey := d.Get("client_secret_key").(string)
 	initializeFileSystem := d.Get("initialize_file_system").(bool)
 
-	adlsGen2Mount := NewAzureADLSGen2Mount(containerName, storageAccountName, directory, mountName, clientID, tenantID,
+	adlsGen2Mount := NewAzureADLSGen2Mount(containerName, storageAccountName, directory, mountName, useAADPassthrough, clientID, tenantID,
 		clientSecretScope, clientSecretKey, initializeFileSystem)
 
 	url, err := adlsGen2Mount.Read(client, clusterID)
@@ -183,13 +190,14 @@ func resourceAzureAdlsGen2Delete(d *schema.ResourceData, m interface{}) error {
 	storageAccountName := d.Get("storage_account_name").(string)
 	directory := d.Get("directory").(string)
 	mountName := d.Get("mount_name").(string)
+	useAADPassthrough := d.Get("use_aad_passthrough").(bool)
 	tenantID := d.Get("tenant_id").(string)
 	clientID := d.Get("client_id").(string)
 	clientSecretScope := d.Get("client_secret_scope").(string)
 	clientSecretKey := d.Get("client_secret_key").(string)
 	initializeFileSystem := d.Get("initialize_file_system").(bool)
 
-	adlsGen2Mount := NewAzureADLSGen2Mount(containerName, storageAccountName, directory, mountName, clientID, tenantID,
+	adlsGen2Mount := NewAzureADLSGen2Mount(containerName, storageAccountName, directory, mountName, useAADPassthrough, clientID, tenantID,
 		clientSecretScope, clientSecretKey, initializeFileSystem)
 	return adlsGen2Mount.Delete(client, clusterID)
 }

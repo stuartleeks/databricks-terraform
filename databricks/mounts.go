@@ -293,6 +293,7 @@ type AzureADLSGen2Mount struct {
 	StorageAccountName   string
 	Directory            string
 	MountName            string
+	UseAADPassthrough    bool
 	ClientID             string
 	TenantID             string
 	SecretScope          string
@@ -301,32 +302,49 @@ type AzureADLSGen2Mount struct {
 }
 
 // NewAzureADLSGen2Mount is a constructor for AzureADLSGen2Mount
-func NewAzureADLSGen2Mount(containerName string, storageAccountName string, directory string, mountName string, clientID string, tenantID string, secretScope string, secretKey string, initializeFileSystem bool) *AzureADLSGen2Mount {
-	return &AzureADLSGen2Mount{ContainerName: containerName, StorageAccountName: storageAccountName, Directory: directory, MountName: mountName, ClientID: clientID, TenantID: tenantID, SecretScope: secretScope, SecretKey: secretKey, InitializeFileSystem: initializeFileSystem}
+func NewAzureADLSGen2Mount(containerName string, storageAccountName string, directory string, mountName string, useAADPassthrough bool, clientID string, tenantID string, secretScope string, secretKey string, initializeFileSystem bool) *AzureADLSGen2Mount {
+	return &AzureADLSGen2Mount{ContainerName: containerName, StorageAccountName: storageAccountName, Directory: directory, MountName: mountName, UseAADPassthrough: useAADPassthrough, ClientID: clientID, TenantID: tenantID, SecretScope: secretScope, SecretKey: secretKey, InitializeFileSystem: initializeFileSystem}
 }
 
 // Create creates a azure datalake gen 2 storage mount
 func (m AzureADLSGen2Mount) Create(client service.DBApiClient, clusterID string) error {
+
+	var iamMountConfigs string
+
+	if m.UseAADPassthrough {
+		iamMountConfigs =
+			fmt.Sprintf(`configs = {
+	"fs.azure.account.auth.type": "CustomAccessToken",
+	"fs.azure.account.custom.token.provider.class":   spark.conf.get("spark.databricks.passthrough.adls.gen2.tokenProviderClassName"),
+	"fs.azure.createRemoteFileSystemDuringInitialization": "%[1]t"
+}`, m.InitializeFileSystem)
+	} else {
+		iamMountConfigs = fmt.Sprintf(
+			`configs = {"fs.azure.account.auth.type": "OAuth",
+	"fs.azure.account.oauth.provider.type": "org.apache.hadoop.fs.azurebfs.oauth2.ClientCredsTokenProvider",
+	"fs.azure.account.oauth2.client.id": "%[1]s",
+	"fs.azure.account.oauth2.client.secret": dbutils.secrets.get(scope = "%[2]s", key = "%[3]s"),
+	"fs.azure.account.oauth2.client.endpoint": "https://login.microsoftonline.com/%[4]s/oauth2/token"
+	"fs.azure.createRemoteFileSystemDuringInitialization": "%[5]t"
+}`, m.ClientID, m.SecretScope, m.SecretKey, m.TenantID, m.InitializeFileSystem)
+	}
+
 	iamMountCommand := fmt.Sprintf(`
 try:
-  configs = {"fs.azure.account.auth.type": "OAuth",
-           "fs.azure.account.oauth.provider.type": "org.apache.hadoop.fs.azurebfs.oauth2.ClientCredsTokenProvider",
-           "fs.azure.account.oauth2.client.id": "%[1]s",
-           "fs.azure.account.oauth2.client.secret": dbutils.secrets.get(scope = "%[2]s", key = "%[3]s"),
-		   "fs.azure.account.oauth2.client.endpoint": "https://login.microsoftonline.com/%[4]s/oauth2/token",
-		   "fs.azure.createRemoteFileSystemDuringInitialization": "%[5]t"}
+  %[1]s
   dbutils.fs.mount(
-   source = "abfss://%[6]s@%[7]s.dfs.core.windows.net%[8]s",
-   mount_point = "/mnt/%[9]s",
+   source = "abfss://%[2]s@%[3]s.dfs.core.windows.net/%[4]s",
+   mount_point = "/mnt/%[5]s",
    extra_configs = configs)
 except Exception as e:
-  try:
-    dbutils.fs.unmount("/mnt/%[9]s")
-  except Exception as e2:
-    print ("Failed to unmount", e2)
-  raise e
-dbutils.notebook.exit("success")
-`, m.ClientID, m.SecretScope, m.SecretKey, m.TenantID, m.InitializeFileSystem, m.ContainerName, m.StorageAccountName, m.Directory, m.MountName)
+   try:
+	 dbutils.fs.unmount("/mnt/%[5]s")
+   except Exception as e2:
+	 print ("Failed to unmount", e2)
+   raise e
+ dbutils.notebook.exit("success")
+`, iamMountConfigs, m.ContainerName, m.StorageAccountName, m.Directory, m.MountName)
+
 	resp, err := client.Commands().Execute(clusterID, "python", iamMountCommand)
 	if err != nil {
 		return err
