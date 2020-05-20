@@ -61,9 +61,10 @@ func resourceAzureAdlsGen2Mount() *schema.Resource {
 				ForceNew: true,
 			},
 			"client_secret_key": {
-				Type:     schema.TypeString,
-				Required: true,
-				ForceNew: true,
+				Type:      schema.TypeString,
+				Required:  true,
+				Sensitive: true,
+				ForceNew:  true,
 			},
 			"initialize_file_system": {
 				Type:     schema.TypeBool,
