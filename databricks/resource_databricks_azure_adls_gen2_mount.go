@@ -47,11 +47,10 @@ func resourceAzureAdlsGen2Mount() *schema.Resource {
 				ForceNew:     true,
 				ValidateFunc: validation.StringInSlice([]string{"AADPassthrough", "ServicePrincipal"}, false),
 			},
-			// TODO Add validation that service_principal is set iff mount_type == ServicePrincipal
-			// TODO - is service_principal the right name??
 			"service_principal": {
 				Type:     schema.TypeList,
-				Required: true,
+				Optional: true,
+				ForceNew: true,
 				MaxItems: 1,
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
