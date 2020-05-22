@@ -87,14 +87,7 @@ func resourceAzureAdlsGen2Mount() *schema.Resource {
 		},
 	}
 }
-
-func resourceAzureAdlsGen2Create(d *schema.ResourceData, m interface{}) error {
-	client := m.(service.DBApiClient)
-	clusterID := d.Get("cluster_id").(string)
-	err := changeClusterIntoRunningState(clusterID, client)
-	if err != nil {
-		return err
-	}
+func resourceAzureAdlsGen2GetMountFromResourceData(d *schema.ResourceData) (*AzureADLSGen2Mount, error) {
 	containerName := d.Get("container_name").(string)
 	storageAccountName := d.Get("storage_account_name").(string)
 	directory := d.Get("directory").(string)
@@ -102,14 +95,13 @@ func resourceAzureAdlsGen2Create(d *schema.ResourceData, m interface{}) error {
 	mountType := d.Get("mount_type").(string)
 	initializeFileSystem := d.Get("initialize_file_system").(bool)
 
-	var adlsGen2Mount *AzureADLSGen2Mount
 	switch mountType {
 	case "AADPassthrough":
-		adlsGen2Mount = NewAzureADLSGen2Mount(containerName, storageAccountName, directory, mountName, AzureADLSGen2MountType_AADPassthrough, nil, initializeFileSystem)
+		return NewAzureADLSGen2Mount(containerName, storageAccountName, directory, mountName, AzureADLSGen2MountType_AADPassthrough, nil, initializeFileSystem), nil
 	case "ServicePrincipal":
 		servicePrincipalList := d.Get("service_principal").([]interface{})
 		if len(servicePrincipalList) == 0 {
-			return fmt.Errorf("Error: when mount_type is ServicePrincipal, service_principal block is required")
+			return nil, fmt.Errorf("Error: when mount_type is ServicePrincipal, service_principal block is required")
 		}
 		servicePrincipalProps := servicePrincipalList[0].(map[string]interface{})
 		tenantID := servicePrincipalProps["tenant_id"].(string)
@@ -122,16 +114,29 @@ func resourceAzureAdlsGen2Create(d *schema.ResourceData, m interface{}) error {
 			SecretScope: clientSecretScope,
 			SecretKey:   clientSecretKey,
 		}
-		adlsGen2Mount = NewAzureADLSGen2Mount(containerName, storageAccountName, directory, mountName, AzureADLSGen2MountType_ServicePrincipal, &servicePrincipal, initializeFileSystem)
-	default:
-		return fmt.Errorf("Unsupported value for mount_type: '%s'", mountType)
+		return NewAzureADLSGen2Mount(containerName, storageAccountName, directory, mountName, AzureADLSGen2MountType_ServicePrincipal, &servicePrincipal, initializeFileSystem), nil
+	}
+	return nil, fmt.Errorf("Unsupported value for mount_type: '%s'", mountType)
+}
+
+func resourceAzureAdlsGen2Create(d *schema.ResourceData, m interface{}) error {
+	client := m.(service.DBApiClient)
+	clusterID := d.Get("cluster_id").(string)
+	err := changeClusterIntoRunningState(clusterID, client)
+	if err != nil {
+		return err
+	}
+
+	adlsGen2Mount, err := resourceAzureAdlsGen2GetMountFromResourceData(d)
+	if err != nil {
+		return err
 	}
 
 	err = adlsGen2Mount.Create(client, clusterID)
 	if err != nil {
 		return err
 	}
-	d.SetId(mountName)
+	d.SetId(adlsGen2Mount.MountName)
 
 	err = d.Set("cluster_id", clusterID)
 	if err != nil {
