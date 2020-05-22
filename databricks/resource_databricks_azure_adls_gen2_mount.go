@@ -176,43 +176,35 @@ func resourceAzureAdlsGen2Read(d *schema.ResourceData, m interface{}) error {
 	if err != nil {
 		return err
 	}
-	containerName := d.Get("container_name").(string)
-	storageAccountName := d.Get("storage_account_name").(string)
-	directory := d.Get("directory").(string)
-	mountName := d.Get("mount_name").(string)
-	useAADPassthrough := d.Get("use_aad_passthrough").(bool)
-	tenantID := d.Get("tenant_id").(string)
-	clientID := d.Get("client_id").(string)
-	clientSecretScope := d.Get("client_secret_scope").(string)
-	clientSecretKey := d.Get("client_secret_key").(string)
-	initializeFileSystem := d.Get("initialize_file_system").(bool)
 
-	adlsGen2Mount := NewAzureADLSGen2Mount(containerName, storageAccountName, directory, mountName, useAADPassthrough, clientID, tenantID,
-		clientSecretScope, clientSecretKey, initializeFileSystem)
+	adlsGen2Mount, err := resourceAzureAdlsGen2GetMountFromResourceData(d)
+	if err != nil {
+		return err
+	}
 
 	url, err := adlsGen2Mount.Read(client, clusterID)
 	if err != nil {
 		//Reset id in case of inability to find mount
 		if strings.Contains(err.Error(), "Unable to find mount point!") ||
-			strings.Contains(err.Error(), fmt.Sprintf("/mnt/%s does not exist.", mountName)) {
+			strings.Contains(err.Error(), fmt.Sprintf("/mnt/%s does not exist.", adlsGen2Mount.MountName)) {
 			d.SetId("")
 			return nil
 		}
 		return err
 	}
-	container, storageAcc, dir, err := ProcessAzureWasbAbfssUris(url)
+	containerName, storageAccount, directory, err := ProcessAzureWasbAbfssUris(url)
 	if err != nil {
 		return err
 	}
-	err = d.Set("container_name", container)
+	err = d.Set("container_name", containerName)
 	if err != nil {
 		return err
 	}
-	err = d.Set("storage_account_name", storageAcc)
+	err = d.Set("storage_account_name", storageAccount)
 	if err != nil {
 		return err
 	}
-	err = d.Set("directory", dir)
+	err = d.Set("directory", directory)
 	return err
 }
 
@@ -223,18 +215,11 @@ func resourceAzureAdlsGen2Delete(d *schema.ResourceData, m interface{}) error {
 	if err != nil {
 		return err
 	}
-	containerName := d.Get("container_name").(string)
-	storageAccountName := d.Get("storage_account_name").(string)
-	directory := d.Get("directory").(string)
-	mountName := d.Get("mount_name").(string)
-	useAADPassthrough := d.Get("use_aad_passthrough").(bool)
-	tenantID := d.Get("tenant_id").(string)
-	clientID := d.Get("client_id").(string)
-	clientSecretScope := d.Get("client_secret_scope").(string)
-	clientSecretKey := d.Get("client_secret_key").(string)
-	initializeFileSystem := d.Get("initialize_file_system").(bool)
 
-	adlsGen2Mount := NewAzureADLSGen2Mount(containerName, storageAccountName, directory, mountName, useAADPassthrough, clientID, tenantID,
-		clientSecretScope, clientSecretKey, initializeFileSystem)
+	adlsGen2Mount, err := resourceAzureAdlsGen2GetMountFromResourceData(d)
+	if err != nil {
+		return err
+	}
+
 	return adlsGen2Mount.Delete(client, clusterID)
 }
