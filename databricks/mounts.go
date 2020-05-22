@@ -286,6 +286,19 @@ for mount in dbutils.fs.mounts():
 	return resp.Results.Data.(string), nil
 }
 
+// AzureADLSGen2MountServicePrincipal stores details for referencing a service principal for an ADLS Gen2 mount
+type AzureADLSGen2MountServicePrincipal struct {
+	ClientID    string
+	TenantID    string
+	SecretScope string
+	SecretKey   string
+}
+
+type AzureADLSGen2MountType string
+
+const AzureADLSGen2MountType_AADPassthrough AzureADLSGen2MountType = "AADPassthrough"
+const AzureADLSGen2MountType_ServicePrincipal AzureADLSGen2MountType = "ServicePrincipal"
+
 // AzureADLSGen2Mount describes the object for a azure datalake gen 2 storage mount
 type AzureADLSGen2Mount struct {
 	Mount
@@ -293,21 +306,14 @@ type AzureADLSGen2Mount struct {
 	StorageAccountName   string
 	Directory            string
 	MountName            string
-	UseAADPassthrough    bool
-	ClientID             string
-	TenantID             string
-	SecretScope          string
-	SecretKey            string
+	MountType            AzureADLSGen2MountType
+	ServicePrincipal     *AzureADLSGen2MountServicePrincipal
 	InitializeFileSystem bool
 }
 
 // NewAzureADLSGen2Mount is a constructor for AzureADLSGen2Mount
-func NewAzureADLSGen2MountServicePrincipal(containerName string, storageAccountName string, directory string, mountName string, clientID string, tenantID string, secretScope string, secretKey string, initializeFileSystem bool) *AzureADLSGen2Mount {
-	return &AzureADLSGen2Mount{ContainerName: containerName, StorageAccountName: storageAccountName, Directory: directory, MountName: mountName, UseAADPassthrough: false, ClientID: clientID, TenantID: tenantID, SecretScope: secretScope, SecretKey: secretKey, InitializeFileSystem: initializeFileSystem}
-}
-
-func NewAzureADLSGen2MountAADPassthrough(containerName string, storageAccountName string, directory string, mountName string, initializeFileSystem bool) *AzureADLSGen2Mount {
-	return &AzureADLSGen2Mount{ContainerName: containerName, StorageAccountName: storageAccountName, Directory: directory, MountName: mountName, UseAADPassthrough: true, InitializeFileSystem: initializeFileSystem}
+func NewAzureADLSGen2Mount(containerName string, storageAccountName string, directory string, mountName string, mountType AzureADLSGen2MountType, servicePrincipal *AzureADLSGen2MountServicePrincipal, initializeFileSystem bool) *AzureADLSGen2Mount {
+	return &AzureADLSGen2Mount{ContainerName: containerName, StorageAccountName: storageAccountName, Directory: directory, MountName: mountName, MountType: mountType, ServicePrincipal: servicePrincipal, InitializeFileSystem: initializeFileSystem}
 }
 
 // Create creates a azure datalake gen 2 storage mount
@@ -315,7 +321,7 @@ func (m AzureADLSGen2Mount) Create(client service.DBApiClient, clusterID string)
 
 	var iamMountConfigs string
 
-	if m.UseAADPassthrough {
+	if m.MountType == AzureADLSGen2MountType_AADPassthrough {
 		iamMountConfigs = fmt.Sprintf(`configs = {
 	"fs.azure.account.auth.type": "CustomAccessToken",
 	"fs.azure.account.custom.token.provider.class":   spark.conf.get("spark.databricks.passthrough.adls.gen2.tokenProviderClassName"),
@@ -329,7 +335,7 @@ func (m AzureADLSGen2Mount) Create(client service.DBApiClient, clusterID string)
 	"fs.azure.account.oauth2.client.secret": dbutils.secrets.get(scope = "%[2]s", key = "%[3]s"),
 	"fs.azure.account.oauth2.client.endpoint": "https://login.microsoftonline.com/%[4]s/oauth2/token"
 	"fs.azure.createRemoteFileSystemDuringInitialization": "%[5]t"
-}`, m.ClientID, m.SecretScope, m.SecretKey, m.TenantID, m.InitializeFileSystem)
+}`, m.ServicePrincipal.ClientID, m.ServicePrincipal.SecretScope, m.ServicePrincipal.SecretKey, m.ServicePrincipal.TenantID, m.InitializeFileSystem)
 	}
 
 	iamMountCommand := fmt.Sprintf(`

@@ -103,28 +103,26 @@ func resourceAzureAdlsGen2Create(d *schema.ResourceData, m interface{}) error {
 	initializeFileSystem := d.Get("initialize_file_system").(bool)
 
 	var adlsGen2Mount *AzureADLSGen2Mount
-	var servicePrincipal map[string]interface{}
 	switch mountType {
 	case "AADPassthrough":
-		adlsGen2Mount = NewAzureADLSGen2MountAADPassthrough(containerName, storageAccountName, directory, mountName, initializeFileSystem)
+		adlsGen2Mount = NewAzureADLSGen2Mount(containerName, storageAccountName, directory, mountName, AzureADLSGen2MountType_AADPassthrough, nil, initializeFileSystem)
 	case "ServicePrincipal":
 		servicePrincipalList := d.Get("service_principal").([]interface{})
 		if len(servicePrincipalList) == 0 {
 			return fmt.Errorf("Error: when mount_type is ServicePrincipal, service_principal block is required")
 		}
-		servicePrincipal := servicePrincipalList[0].(map[string]interface{})
-		tenantID := servicePrincipal["tenant_id"].(string)
-		clientID := servicePrincipal["client_id"].(string)
-		clientSecretScope := servicePrincipal["client_secret_scope"].(string)
-		clientSecretKey := servicePrincipal["client_secret_key"].(string)
-		adlsGen2Mount = NewAzureADLSGen2MountServicePrincipal(containerName, storageAccountName, directory, mountName, clientID, tenantID, clientSecretScope, clientSecretKey, initializeFileSystem)
-
-		servicePrincipal = map[string]interface{}{
-			"tenant_id":           tenantID,
-			"client_id":           clientID,
-			"client_secret_scope": clientSecretScope,
-			"client_secret_key":   clientSecretKey,
+		servicePrincipalProps := servicePrincipalList[0].(map[string]interface{})
+		tenantID := servicePrincipalProps["tenant_id"].(string)
+		clientID := servicePrincipalProps["client_id"].(string)
+		clientSecretScope := servicePrincipalProps["client_secret_scope"].(string)
+		clientSecretKey := servicePrincipalProps["client_secret_key"].(string)
+		servicePrincipal := AzureADLSGen2MountServicePrincipal{
+			TenantID:    tenantID,
+			ClientID:    clientID,
+			SecretScope: clientSecretScope,
+			SecretKey:   clientSecretKey,
 		}
+		adlsGen2Mount = NewAzureADLSGen2Mount(containerName, storageAccountName, directory, mountName, AzureADLSGen2MountType_ServicePrincipal, &servicePrincipal, initializeFileSystem)
 	default:
 		return fmt.Errorf("Unsupported value for mount_type: '%s'", mountType)
 	}
@@ -139,21 +137,27 @@ func resourceAzureAdlsGen2Create(d *schema.ResourceData, m interface{}) error {
 	if err != nil {
 		return err
 	}
-	err = d.Set("mount_name", mountName)
+	err = d.Set("mount_name", adlsGen2Mount.MountName)
 	if err != nil {
 		return err
 	}
-	err = d.Set("mount_type", mountType)
+	err = d.Set("mount_type", adlsGen2Mount.MountType)
 	if err != nil {
 		return err
 	}
-	if servicePrincipal != nil {
-		err = d.Set("service_principal", servicePrincipal)
+	if adlsGen2Mount.MountType == AzureADLSGen2MountType_ServicePrincipal {
+		servicePrincipalMap := map[string]interface{}{
+			"tenant_id":           adlsGen2Mount.ServicePrincipal.TenantID,
+			"client_id":           adlsGen2Mount.ServicePrincipal.ClientID,
+			"client_secret_scope": adlsGen2Mount.ServicePrincipal.SecretScope,
+			"client_secret_key":   adlsGen2Mount.ServicePrincipal.SecretKey,
+		}
+		err = d.Set("service_principal", servicePrincipalMap)
 		if err != nil {
 			return err
 		}
 	}
-	err = d.Set("initialize_file_system", initializeFileSystem)
+	err = d.Set("initialize_file_system", adlsGen2Mount.InitializeFileSystem)
 	if err != nil {
 		return err
 	}
