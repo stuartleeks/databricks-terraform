@@ -356,7 +356,7 @@ dbutils.notebook.exit("success")
 
 	resp, err := client.Commands().Execute(clusterID, "python", iamMountCommand)
 	if err != nil {
-		return err
+		return fmt.Errorf("error applying mount: %v", err)
 	}
 	if resp.Results.ResultType == "error" {
 		log.Println(fmt.Sprintf("[ERROR] [CAUSED BY] %s", resp.Results.Cause))
@@ -374,7 +374,7 @@ dbutils.notebook.exit("success")
 `, m.MountName)
 	resp, err := client.Commands().Execute(clusterID, "python", iamMountCommand)
 	if err != nil {
-		return err
+		return fmt.Errorf("error deleting mount: %v", err)
 	}
 	if resp.Results.ResultType == "error" {
 		log.Println(fmt.Sprintf("[ERROR] [CAUSED BY] %s", resp.Results.Cause))
@@ -393,7 +393,7 @@ for mount in dbutils.fs.mounts():
 `, m.MountName, m.MountName)
 	resp, err := client.Commands().Execute(clusterID, "python", iamMountCommand)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("error reading mount: %v", err)
 	}
 	if resp.Results.ResultType == "error" {
 		log.Println(fmt.Sprintf("[ERROR] [CAUSED BY] %s", resp.Results.Cause))
