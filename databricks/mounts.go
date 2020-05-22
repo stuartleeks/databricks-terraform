@@ -333,7 +333,7 @@ func (m AzureADLSGen2Mount) Create(client service.DBApiClient, clusterID string)
 	"fs.azure.account.oauth.provider.type": "org.apache.hadoop.fs.azurebfs.oauth2.ClientCredsTokenProvider",
 	"fs.azure.account.oauth2.client.id": "%[1]s",
 	"fs.azure.account.oauth2.client.secret": dbutils.secrets.get(scope = "%[2]s", key = "%[3]s"),
-	"fs.azure.account.oauth2.client.endpoint": "https://login.microsoftonline.com/%[4]s/oauth2/token"
+	"fs.azure.account.oauth2.client.endpoint": "https://login.microsoftonline.com/%[4]s/oauth2/token",
 	"fs.azure.createRemoteFileSystemDuringInitialization": "%[5]t"
 }`, m.ServicePrincipal.ClientID, m.ServicePrincipal.SecretScope, m.ServicePrincipal.SecretKey, m.ServicePrincipal.TenantID, m.InitializeFileSystem)
 	}
