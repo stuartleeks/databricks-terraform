@@ -346,12 +346,12 @@ try:
    mount_point = "/mnt/%[5]s",
    extra_configs = configs)
 except Exception as e:
-   try:
-	 dbutils.fs.unmount("/mnt/%[5]s")
-   except Exception as e2:
-	 print ("Failed to unmount", e2)
-   raise e
- dbutils.notebook.exit("success")
+  try:
+    dbutils.fs.unmount("/mnt/%[5]s")
+  except Exception as e2:
+    print ("Failed to unmount", e2)
+  raise e
+dbutils.notebook.exit("success")
 `, iamMountConfigs, m.ContainerName, m.StorageAccountName, m.Directory, m.MountName)
 
 	resp, err := client.Commands().Execute(clusterID, "python", iamMountCommand)
