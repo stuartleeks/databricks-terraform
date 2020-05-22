@@ -157,7 +157,7 @@ func resourceAzureAdlsGen2Create(d *schema.ResourceData, m interface{}) error {
 			"client_secret_scope": adlsGen2Mount.ServicePrincipal.SecretScope,
 			"client_secret_key":   adlsGen2Mount.ServicePrincipal.SecretKey,
 		}
-		err = d.Set("service_principal", servicePrincipalMap)
+		err = d.Set("service_principal", []interface{}{servicePrincipalMap})
 		if err != nil {
 			return err
 		}
