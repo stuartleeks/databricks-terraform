@@ -9,8 +9,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/helper/resource"
 )
 
-func TestAccAzureAdlsGen2Mount_correctly_mounts(t *testing.T) {
-	terraformToApply := testAccAzureAdlsGen2Mount_correctly_mounts()
+func TestAccAzureAdlsGen2MountWithServicePrincipal_correctly_mounts(t *testing.T) {
+	terraformToApply := testAccAzureAdlsGen2MountWithServicePrincipal_correctly_mounts()
 
 	resource.Test(t, resource.TestCase{
 		Providers: testAccProviders,
@@ -23,7 +23,7 @@ func TestAccAzureAdlsGen2Mount_correctly_mounts(t *testing.T) {
 }
 
 func TestAccAzureAdlsGen2Mount_capture_error(t *testing.T) {
-	terraformToApply := testAccAzureAdlsGen2Mount_capture_error()
+	terraformToApply := testAccAzureAdlsGen2MountServicePrincipal_capture_error()
 
 	resource.Test(t, resource.TestCase{
 		Providers: testAccProviders,
@@ -38,7 +38,7 @@ func TestAccAzureAdlsGen2Mount_capture_error(t *testing.T) {
 	})
 }
 
-func testAccAzureAdlsGen2Mount_correctly_mounts() string {
+func testAccAzureAdlsGen2MountWithServicePrincipal_correctly_mounts() string {
 	clientID := os.Getenv("ARM_CLIENT_ID")
 	clientSecret := os.Getenv("ARM_CLIENT_SECRET")
 	tenantID := os.Getenv("ARM_TENANT_ID")
@@ -91,10 +91,13 @@ func testAccAzureAdlsGen2Mount_correctly_mounts() string {
 	  storage_account_name   = "%[9]s"
 	  directory              = ""
 	  mount_name             = "localdir${databricks_cluster.cluster.cluster_id}"
-	  tenant_id              = "%[3]s"
-	  client_id              = "%[1]s"
-	  client_secret_scope    = databricks_secret_scope.terraform.name
-	  client_secret_key      = databricks_secret.client_secret.key
+	  mount_type             = "ServicePrincipal"
+	  service_principal {
+	    tenant_id              = "%[3]s"
+	    client_id              = "%[1]s"
+	    client_secret_scope    = databricks_secret_scope.terraform.name
+	    client_secret_key      = databricks_secret.client_secret.key
+	  }
 	  initialize_file_system = true
 	}
 
@@ -102,7 +105,7 @@ func testAccAzureAdlsGen2Mount_correctly_mounts() string {
 	return definition
 }
 
-func testAccAzureAdlsGen2Mount_capture_error() string {
+func testAccAzureAdlsGen2MountServicePrincipal_capture_error() string {
 	clientID := os.Getenv("ARM_CLIENT_ID")
 	clientSecret := os.Getenv("ARM_CLIENT_SECRET")
 	tenantID := os.Getenv("ARM_TENANT_ID")
@@ -155,10 +158,13 @@ func testAccAzureAdlsGen2Mount_capture_error() string {
 	  storage_account_name   = "%[9]s"
 	  directory              = ""
 	  mount_name             = "localdir${databricks_cluster.cluster.cluster_id}"
-	  tenant_id              = "%[3]s"
-	  client_id              = "%[1]s"
-	  client_secret_scope    = databricks_secret_scope.terraform.name
-	  client_secret_key      = "SECRET_KEY_WRONG_ON_PURPOSE"
+	  mount_type             = "ServicePrincipal"
+	  service_principal {
+	    tenant_id              = "%[3]s"
+	    client_id              = "%[1]s"
+	    client_secret_scope    = databricks_secret_scope.terraform.name
+	    client_secret_key      = "SECRET_KEY_WRONG_ON_PURPOSE"
+	  }
 	  initialize_file_system = true
 	}
 
