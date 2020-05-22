@@ -302,8 +302,12 @@ type AzureADLSGen2Mount struct {
 }
 
 // NewAzureADLSGen2Mount is a constructor for AzureADLSGen2Mount
-func NewAzureADLSGen2Mount(containerName string, storageAccountName string, directory string, mountName string, useAADPassthrough bool, clientID string, tenantID string, secretScope string, secretKey string, initializeFileSystem bool) *AzureADLSGen2Mount {
-	return &AzureADLSGen2Mount{ContainerName: containerName, StorageAccountName: storageAccountName, Directory: directory, MountName: mountName, UseAADPassthrough: useAADPassthrough, ClientID: clientID, TenantID: tenantID, SecretScope: secretScope, SecretKey: secretKey, InitializeFileSystem: initializeFileSystem}
+func NewAzureADLSGen2MountServicePrincipal(containerName string, storageAccountName string, directory string, mountName string, clientID string, tenantID string, secretScope string, secretKey string, initializeFileSystem bool) *AzureADLSGen2Mount {
+	return &AzureADLSGen2Mount{ContainerName: containerName, StorageAccountName: storageAccountName, Directory: directory, MountName: mountName, UseAADPassthrough: false, ClientID: clientID, TenantID: tenantID, SecretScope: secretScope, SecretKey: secretKey, InitializeFileSystem: initializeFileSystem}
+}
+
+func NewAzureADLSGen2MountAADPassthrough(containerName string, storageAccountName string, directory string, mountName string, initializeFileSystem bool) *AzureADLSGen2Mount {
+	return &AzureADLSGen2Mount{ContainerName: containerName, StorageAccountName: storageAccountName, Directory: directory, MountName: mountName, UseAADPassthrough: true, InitializeFileSystem: initializeFileSystem}
 }
 
 // Create creates a azure datalake gen 2 storage mount
@@ -312,8 +316,7 @@ func (m AzureADLSGen2Mount) Create(client service.DBApiClient, clusterID string)
 	var iamMountConfigs string
 
 	if m.UseAADPassthrough {
-		iamMountConfigs =
-			fmt.Sprintf(`configs = {
+		iamMountConfigs = fmt.Sprintf(`configs = {
 	"fs.azure.account.auth.type": "CustomAccessToken",
 	"fs.azure.account.custom.token.provider.class":   spark.conf.get("spark.databricks.passthrough.adls.gen2.tokenProviderClassName"),
 	"fs.azure.createRemoteFileSystemDuringInitialization": "%[1]t"

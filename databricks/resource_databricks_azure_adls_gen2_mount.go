@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/databrickslabs/databricks-terraform/client/service"
 	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
+	"github.com/hashicorp/terraform-plugin-sdk/helper/validation"
 	"strings"
 )
 
@@ -40,31 +41,43 @@ func resourceAzureAdlsGen2Mount() *schema.Resource {
 				Required: true,
 				ForceNew: true,
 			},
-			"use_aad_passthrough": {
-				Type:     schema.TypeBool,
-				Optional: true,
-				Default:  true,
+			"mount_type": {
+				Type:         schema.TypeString,
+				Required:     true,
+				ForceNew:     true,
+				ValidateFunc: validation.StringInSlice([]string{"AADPassthrough", "ServicePrincipal"}, false),
 			},
-			"tenant_id": { //ToDo: LK discuss with SL how to tackle "Required: true" on the following attributes
-				Type:     schema.TypeString,
+			// TODO Add validation that service_principal is set iff mount_type == ServicePrincipal
+			// TODO - is service_principal the right name??
+			"service_principal": {
+				Type:     schema.TypeList,
 				Required: true,
-				ForceNew: true,
-			},
-			"client_id": {
-				Type:     schema.TypeString,
-				Required: true,
-				ForceNew: true,
-			},
-			"client_secret_scope": {
-				Type:     schema.TypeString,
-				Required: true,
-				ForceNew: true,
-			},
-			"client_secret_key": {
-				Type:      schema.TypeString,
-				Required:  true,
-				Sensitive: true,
-				ForceNew:  true,
+				MaxItems: 1,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"tenant_id": {
+							Type:     schema.TypeString,
+							Required: true,
+							ForceNew: true,
+						},
+						"client_id": {
+							Type:     schema.TypeString,
+							Required: true,
+							ForceNew: true,
+						},
+						"client_secret_scope": {
+							Type:     schema.TypeString,
+							Required: true,
+							ForceNew: true,
+						},
+						"client_secret_key": {
+							Type:      schema.TypeString,
+							Required:  true,
+							Sensitive: true,
+							ForceNew:  true,
+						},
+					},
+				},
 			},
 			"initialize_file_system": {
 				Type:     schema.TypeBool,
@@ -86,15 +99,35 @@ func resourceAzureAdlsGen2Create(d *schema.ResourceData, m interface{}) error {
 	storageAccountName := d.Get("storage_account_name").(string)
 	directory := d.Get("directory").(string)
 	mountName := d.Get("mount_name").(string)
-	useAADPassthrough := d.Get("use_aad_passthrough").(bool)
-	tenantID := d.Get("tenant_id").(string)
-	clientID := d.Get("client_id").(string)
-	clientSecretScope := d.Get("client_secret_scope").(string)
-	clientSecretKey := d.Get("client_secret_key").(string)
+	mountType := d.Get("mount_type").(string)
 	initializeFileSystem := d.Get("initialize_file_system").(bool)
 
-	adlsGen2Mount := NewAzureADLSGen2Mount(containerName, storageAccountName, directory, mountName, useAADPassthrough, clientID, tenantID,
-		clientSecretScope, clientSecretKey, initializeFileSystem)
+	var adlsGen2Mount *AzureADLSGen2Mount
+	var servicePrincipal map[string]interface{}
+	switch mountType {
+	case "AADPassthrough":
+		adlsGen2Mount = NewAzureADLSGen2MountAADPassthrough(containerName, storageAccountName, directory, mountName, initializeFileSystem)
+	case "ServicePrincipal":
+		servicePrincipalList := d.Get("service_principal").([]interface{})
+		if len(servicePrincipalList) == 0 {
+			return fmt.Errorf("Error: when mount_type is ServicePrincipal, service_principal block is required")
+		}
+		servicePrincipal := servicePrincipalList[0].(map[string]interface{})
+		tenantID := servicePrincipal["tenant_id"].(string)
+		clientID := servicePrincipal["client_id"].(string)
+		clientSecretScope := servicePrincipal["client_secret_scope"].(string)
+		clientSecretKey := servicePrincipal["client_secret_key"].(string)
+		adlsGen2Mount = NewAzureADLSGen2MountServicePrincipal(containerName, storageAccountName, directory, mountName, clientID, tenantID, clientSecretScope, clientSecretKey, initializeFileSystem)
+
+		servicePrincipal = map[string]interface{}{
+			"tenant_id":           tenantID,
+			"client_id":           clientID,
+			"client_secret_scope": clientSecretScope,
+			"client_secret_key":   clientSecretKey,
+		}
+	default:
+		return fmt.Errorf("Unsupported value for mount_type: '%s'", mountType)
+	}
 
 	err = adlsGen2Mount.Create(client, clusterID)
 	if err != nil {
@@ -110,21 +143,15 @@ func resourceAzureAdlsGen2Create(d *schema.ResourceData, m interface{}) error {
 	if err != nil {
 		return err
 	}
-	err = d.Set("tenant_id", tenantID)
+	err = d.Set("mount_type", mountType)
 	if err != nil {
 		return err
 	}
-	err = d.Set("client_id", clientID)
-	if err != nil {
-		return err
-	}
-	err = d.Set("client_secret_scope", clientSecretScope)
-	if err != nil {
-		return err
-	}
-	err = d.Set("client_secret_key", clientSecretKey)
-	if err != nil {
-		return err
+	if servicePrincipal != nil {
+		err = d.Set("service_principal", servicePrincipal)
+		if err != nil {
+			return err
+		}
 	}
 	err = d.Set("initialize_file_system", initializeFileSystem)
 	if err != nil {
