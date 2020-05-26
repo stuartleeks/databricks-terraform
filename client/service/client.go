@@ -134,6 +134,11 @@ func checkHTTPRetry(ctx context.Context, resp *http.Response, err error) (bool, 
 			StatusCode: resp.StatusCode,
 			Err:        fmt.Errorf("Response from server %s", string(body)),
 		}
+		if resp.StatusCode == 503 {
+			// Service Unavailable
+			log.Println("Failed request detected: StatusCode==503. Attempting retry...")
+			return true, dbAPIError
+		}
 		for _, substring := range transientErrorStringMatches {
 			if strings.Contains(errorBody.Message, substring) {
 				log.Println("Failed request detected: Retryable type found. Attempting retry...")
